@@ -144,8 +144,14 @@ The `list_pinvokes` and anti-debug P/Invoke scanner only detect methods decorate
 
 ### Detect It Easy (DIE)
 
-The protection detection logic in `Tools/Security/` (`AntiDebugTools`, `AntiTamperTools`, `ProtectionReportTools`) draws directly from the detection approach used by [Detect It Easy](https://github.com/horsicq/Detect-It-Easy) by horsicq.
+The protection detection logic in `Tools/Security/` draws directly from the detection approach used by [Detect It Easy](https://github.com/horsicq/Detect-It-Easy) by horsicq.
 
-DIE's core insight — that protector fingerprinting should operate on raw binary byte patterns, PE section metadata, and metadata string heap searches rather than decompiled source — is the foundation of the sub-millisecond detection performance in this project. Several obfuscator signatures (ConfuserEx, Eazfuscator, KoiVM, .NET Reactor, VMProtect, Dotfuscator, MPRESS, Themida, and others) are adapted from DIE's PE signature scripts under `db/PE/`.
+DIE's core insight — that protector fingerprinting should operate on raw binary byte patterns, PE section metadata, and metadata string heap searches rather than decompiled source — is the foundation of the sub-millisecond detection performance in this project. Several obfuscator signatures (ConfuserEx, Eazfuscator, KoiVM, .NET Reactor, VMProtect, Dotfuscator, MPRESS, Themida, and others) are adapted from DIE's PE signature scripts under `db/PE/`. DIE is maintained by horsicq and contributors and is available under the MIT license.
 
-DIE is maintained by horsicq and contributors at https://github.com/horsicq/Detect-It-Easy and is available under the MIT license.
+### Anti-Debug Research
+
+The anti-debug detection categories and API coverage are informed by:
+
+- bengabay1994, [Anti-Debugging with .NET in Windows Environment](https://medium.com/@bengabay1994/anti-debugging-with-net-in-windows-environment-d5955e207c86) — PEB field checks (BeingDebugged, NtGlobalFlag, heap Flags/ForceFlags), StartupInfo.lpDesktop, NtCreateThreadEx thread hiding
+- hsheric0210, [AntiDebug.NET](https://github.com/hsheric0210/AntiDebug.NET) — comprehensive .NET anti-debug and anti-VM technique reference covering dynamic IAT resolution, manual module mapping, and hook bypass patterns
+- Check Point Research, [Anti-Debug Tricks](https://anti-debug.checkpoint.com/) — referenced via AntiDebug.NET
