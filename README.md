@@ -1,281 +1,146 @@
-# dnspy-mcp
+# dnSpy-MCP
 
-[![GitHub License](https://img.shields.io/github/license/ZeraTS/dnspy-mcp?style=flat-square)](LICENSE)
-[![GitHub Release](https://img.shields.io/github/release/ZeraTS/dnspy-mcp?style=flat-square)](https://github.com/ZeraTS/dnspy-mcp/releases)
-[![Python 3.10+](https://img.shields.io/badge/Python-3.10+-blue?style=flat-square)](https://www.python.org/)
+A Model Context Protocol server for static .NET assembly analysis powered by ICSharpCode.Decompiler (dnSpyEx engine). Exposes decompilation, IL disassembly, metadata inspection, and protection analysis as MCP tools over stdio. Never executes target assemblies.
 
-MCP server for .NET binary decompilation and analysis. Includes worker pool, caching, rate limiting, metrics, and integrated CLI debugger.
+## Requirements
 
-**Repository:** https://github.com/ZeraTS/dnspy-mcp
+- .NET 8 SDK or later
+- Compatible MCP client (Claude Desktop, Cursor, or any client supporting MCP stdio transport)
 
-## Quick Start
+## Installation
 
-### Docker
-```bash
-docker-compose up
+```
+git clone https://github.com/ZeraTS/dnSpy-MCP.git
+cd dnSpy-MCP
+dotnet build src/DnSpyMcp/DnSpyMcp.csproj -c Release
 ```
 
-### Manual Setup
-```bash
-chmod +x tools/setup.sh
-./tools/setup.sh
-source venv/bin/activate
-export $(cat config/.env | xargs)
-python3 -m src.core.daemon
-```
+## Claude Desktop Configuration
 
-## Usage
+Add to `claude_desktop_config.json`:
 
-### CLI Tool
-```bash
-python3 -m src.cli.cli decompile /path/to/app.dll
-python3 -m src.cli.cli analyze /path/to/app.dll
-python3 -m src.cli.cli extract /path/to/app.dll System.String
-python3 -m src.cli.cli batch /path/to/*.dll
-python3 -m src.cli.cli status
-```
-
-### REST API
-```bash
-curl -X POST http://localhost:9001/api/decompile \
-  -H "X-API-Key: your-key" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "binary_path": "/path/to/app.dll",
-    "output_format": "vscode",
-    "analyze_obfuscation": true
-  }'
-```
-
-### Check Health
-```bash
-curl http://localhost:9001/health | jq
-curl http://localhost:9001/metrics  # Prometheus format
-```
-
-## API Endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/decompile` | Decompile binary |
-| POST | `/api/analyze-obfuscation` | Detect obfuscation |
-| POST | `/api/extract-class` | Extract class by name |
-| POST | `/api/set-breakpoint` | Create breakpoint |
-| POST | `/api/batch-dump` | Batch process binaries |
-| GET | `/health` | Health check & metrics |
-| GET | `/metrics` | Prometheus metrics |
-| POST | `/cleanup` | Clean up workers |
-
-## Configuration
-
-Edit `config/.env` or `config/config.json`:
-
-```bash
-DNSPY_DAEMON_PORT=9001
-DNSPY_HOST=127.0.0.1
-DNSPY_PATH=/opt/dnspy/dnSpy.exe
-DNSPY_API_KEY=secure-key
-DNSPY_WORKER_POOL_SIZE=5
-DNSPY_REQUEST_TIMEOUT=120
-```
-
-Features can be toggled in `config/config.json`:
 ```json
 {
-  "features": {
-    "enable_caching": true,
-    "enable_rate_limiting": true,
-    "enable_metrics": true,
-    "enable_structured_logging": true,
-    "enable_webhooks": false
+  "mcpServers": {
+    "dnspy-mcp": {
+      "command": "dotnet",
+      "args": ["/path/to/src/DnSpyMcp/bin/Release/net8.0/DnSpyMcp.dll"]
+    }
   }
 }
 ```
 
-## Deployment
+## Tools
 
-### Kubernetes
-```bash
-kubectl apply -f deploy/k8s-deployment.yaml
-kubectl port-forward svc/dnspy-mcp 9001:9001
-```
+| Tool | Description | Key Parameters |
+|------|-------------|----------------|
+| `get_pe_info` | Get PE/COFF header information, assembly metadata, and target framework | `assemblyPath` |
+| `get_resources` | List all manifest resources embedded in the assembly | `assemblyPath` |
+| `resolve_token` | Resolve a metadata token (hex, e.g. `0x02000001`) to its definition | `assemblyPath`, `tokenHex` |
+| `list_pinvokes` | List all P/Invoke (DllImport) declarations in the assembly | `assemblyPath` |
+| `find_attributes` | Find all types and methods decorated with a specific attribute | `assemblyPath`, `attributeName` |
+| `get_methods_for_type` | Get all methods defined on a specific type | `assemblyPath`, `typeName` |
+| `decompile_assembly` | Decompile the entire assembly to C# source code | `assemblyPath` |
+| `decompile_type` | Decompile a specific type to C# source code | `assemblyPath`, `typeName` |
+| `decompile_method` | Decompile a specific method to C# source code | `assemblyPath`, `typeName`, `methodName` |
+| `dump_il` | Dump IL (CIL) disassembly for the whole assembly, a type, or a specific method | `assemblyPath`, `typeName?`, `methodName?` |
+| `inspect_type` | Inspect a type's structure: fields, methods, properties, interfaces, optionally with source | `assemblyPath`, `typeName`, `includeSource?` |
+| `inspect_method` | Inspect a specific method: signature, parameters, decompiled source, optionally IL | `assemblyPath`, `typeName`, `methodName`, `includeSource?`, `includeIL?` |
+| `list_types` | List all type definitions in the assembly | `assemblyPath` |
+| `find_methods` | Find methods in the assembly, optionally filtered by name pattern | `assemblyPath`, `pattern?` |
+| `search_strings` | Search for string literals in the assembly's decompiled source | `assemblyPath`, `pattern`, `useRegex?` |
+| `search_members` | Search for types, methods, fields, and properties by name pattern | `assemblyPath`, `pattern` |
+| `detect_anti_debug` | Static analysis to detect anti-debug techniques across 7 categories | `assemblyPath` |
+| `detect_anti_tamper` | Static analysis to detect obfuscation and anti-tamper protections | `assemblyPath` |
+| `get_protection_report` | Aggregate anti-debug and anti-tamper analysis into a report with risk score (0-10) and bypass recommendations | `assemblyPath` |
 
-### Docker Compose
-```bash
-docker-compose -f deploy/docker-compose.yml up
-```
+## Protection Analysis
+
+`detect_anti_debug`, `detect_anti_tamper`, and `get_protection_report` perform static analysis only. The target assembly is never loaded as a .NET type, never JIT-compiled, and never executed. Analysis uses ICSharpCode.Decompiler's type system and PE reader exclusively.
+
+### Anti-Debug Detection Categories
+
+- P/Invoke declarations targeting known anti-debug APIs (IsDebuggerPresent, NtQueryInformationProcess, etc.)
+- Managed API usage (System.Diagnostics.Debugger.IsAttached, etc.)
+- Timing-based checks (Stopwatch, GetTickCount, QueryPerformanceCounter patterns)
+- Thread hiding (NtSetInformationThread with ThreadHideFromDebugger)
+- TLS callback presence (executes before Main entry point)
+- Hardware breakpoint detection (CONTEXT Dr0-Dr3 reads)
+- Exception-based anti-debug patterns
+
+### Anti-Tamper Detection Categories
+
+- Obfuscator fingerprinting (ConfuserEx, Dotfuscator, Eazfuscator, .NET Reactor, SmartAssembly, KoiVM, and 10+ more)
+- Name obfuscation heuristics (control characters, zero-width characters, saturation)
+- String encryption stubs (cctor array init patterns, int-to-string decrypt method signatures)
+- Control flow obfuscation (switch proxies, high goto density)
+- Integrity checks (self-hash, File.ReadAllBytes on own assembly, termination after hash comparison)
+- VM/virtualisation (large switch dispatchers, encrypted IL stubs)
+- Packing (PE section names: UPX, MPRESS, .vmp0, Themida, etc.)
+
+### Risk Score
+
+`get_protection_report` computes a risk score (0-10):
+
+- High severity/confidence finding: +1.5 points
+- Medium: +0.75 points
+- Low: +0.25 points
+- Capped at 10
 
 ## Project Structure
 
 ```
-dnspy-mcp/
-├── src/
-│   ├── core/              # Daemon and worker
-│   │   ├── daemon.py
-│   │   ├── daemon_worker.py
-│   │   └── mcp_server.py
-│   ├── features/          # Optional features
-│   │   ├── caching.py
-│   │   ├── ratelimit.py
-│   │   ├── metrics.py
-│   │   └── webhooks.py
-│   ├── utils/             # Utilities
-│   │   ├── structured_logging.py
-│   │   └── utils.py
-│   └── cli/               # Command-line tool
-│       └── cli.py
-├── cli-debugger/          # C# .NET CLI tool
-│   ├── src/
-│   │   ├── AutomatedDebugger/
-│   │   └── CLI/
-│   └── dnspy-mcp.csproj
-├── deploy/                # Deployment configs
-│   ├── k8s-deployment.yaml
-│   ├── docker-compose.yml
-│   └── Dockerfile
-├── config/                # Configuration
-│   ├── config.json
-│   └── .env.example
-├── tools/                 # Scripts
-│   ├── setup.sh
-│   └── test_api.sh
-├── tests/                 # Tests
-│   └── test_modules.py
-├── requirements.txt
-└── README.md
-```
-
-## CLI Debugger
-
-Lightweight reflection tool (no dnspy dependency):
-```bash
-cd cli-debugger
-dotnet build -c Release
-dotnet bin/Release/net8.0/dnspy-mcp.dll --binary app.dll --list-types --json
-dotnet bin/Release/net8.0/dnspy-mcp.dll --binary app.dll --method Decrypt --json
-```
-
-## Build & Test
-
-```bash
-make build         # Install dependencies
-make run           # Run daemon (full features)
-make test          # Test API
-make test-modules  # Run unit tests
+src/DnSpyMcp/
+├── Program.cs
+├── Core/
+│   └── AssemblyCache.cs        Thread-safe decompiler cache (keyed by path + mtime)
+├── Models/
+│   └── Results.cs              All result record types
+└── Tools/
+    ├── Analysis/
+    │   ├── AnalysisTools.cs    PE info, resources, token resolution, P/Invokes, attributes
+    │   ├── DecompileTools.cs   C# decompilation, IL disassembly
+    │   ├── InspectTools.cs     Type and method inspection
+    │   └── SearchTools.cs      Type/method/member/string search
+    └── Security/
+        ├── AntiDebugTools.cs         Anti-debug pattern detection
+        ├── AntiTamperTools.cs        Obfuscation and anti-tamper detection
+        └── ProtectionReportTools.cs  Aggregated protection report
 ```
 
 ## Known Issues
 
 <details>
-<summary><b>Obfuscation (ConfuserEx, CodeWall, etc)</b></summary>
+<summary>Analysis of heavily obfuscated assemblies may produce false positives in name obfuscation heuristics</summary>
 
-**Problem:** Encrypted strings, renamed types, IL modification. Decompilation may fail or be incomplete.
+The name obfuscation detector flags members with single-letter names or compiler-generated names (containing `<` `>`). Standard .NET compiler-generated types (lambda closures, async state machines) will contribute to the obfuscated-name ratio. The threshold is set at 30% to reduce noise, but assemblies making heavy use of generics or LINQ may still trigger it.
 
-**Detection:** Entropy analysis (>6.5), "ConfuserEx"/"Confuser" string signatures, unusual method sizes.
-
-**Workarounds:**
-- Frida hooks to intercept string decryption at runtime
-- Mono.Cecil IL disassembly (bypasses decompiler)
-- Dynamic analysis on instrumented VM
-- Manual breakpoint analysis for critical functions
 </details>
 
 <details>
-<summary><b>Virtualized Code (.NET Native, RyuJIT)</b></summary>
+<summary>get_protection_report has a 20-second decompilation budget</summary>
 
-**Problem:** No IL code available. Binary compiled to native. dnspy cannot decompile.
+The method-level analysis (control flow obfuscation, integrity check detection, VM dispatcher detection) stops after 20 seconds of decompilation time. For large assemblies (500+ types), some methods near the end of the type list may not be analysed. Fingerprinting, name obfuscation, and PE section checks are not affected by the budget.
 
-**Detection:** `.xdata` and `.pdata` sections in PE, reduced IL section, large native code section.
-
-**Workarounds:**
-- WinDbg or x64dbg for native disassembly
-- Frida to hook virtualized methods at runtime
-- Binary instrumentation (DynamoRIO, Pin)
-- IL disassembly of remaining managed code
 </details>
 
 <details>
-<summary><b>Anti-Tamper Detection</b></summary>
+<summary>String encryption detection requires obfuscated method names</summary>
 
-**Problem:** Binary checks for modifications. May exit or disable features if tampering detected.
+The string decryption method detector only fires when the method name itself is obfuscated (contains control characters or is a single letter). If a protector uses readable method names for its string decrypt routines, this check will not detect them. The cctor array initialisation pattern is unaffected.
 
-**Detection:** Hash verification in decompiled code, PE header checks, assembly signature validation.
-
-**Workarounds:**
-- Patch decompiled code to skip verification
-- Frida hooks to bypass before they run
-- Modify non-checked binary sections only
-- Instrument runtime rather than modifying binary
-- Use original binary with non-destructive instrumentation
 </details>
 
 <details>
-<summary><b>Anti-Debug Mechanisms</b></summary>
+<summary>Assembly resolver errors on assemblies with missing dependencies</summary>
 
-**Problem:** Detects debuggers and exits or changes behavior. IsDebuggerPresent, OutputDebugString traps, hardware breakpoint detection.
+ICSharpCode.Decompiler attempts to resolve referenced assemblies from the same directory as the target. If dependencies are missing, decompilation of affected methods will fall back to partial output or skip. PE-level operations (`get_pe_info`, `get_resources`, `resolve_token`, `list_pinvokes`) are not affected. `ThrowOnAssemblyResolveErrors` is set to false by default to suppress resolver errors.
 
-**Detection:** Search decompiled code for `Debugger.IsAttached`, `System.Diagnostics.Debugger`, debug environment variables.
-
-**Workarounds:**
-- Patch anti-debug calls before running
-- Run on non-debug CLR (release build)
-- Frida hooks to fake `IsAttached` = false
-- Kernel-mode debugger (WinDbg) to bypass user-mode checks
-- Static analysis without execution
 </details>
 
 <details>
-<summary><b>Runtime Integrity Checks</b></summary>
+<summary>P/Invoke entry point detection is limited to DllImportAttribute</summary>
 
-**Problem:** Code verifies its own integrity at runtime. May throw or disable features.
+The `list_pinvokes` and anti-debug P/Invoke scanner only detect methods decorated with `[DllImport]`. Dynamic P/Invoke patterns using `NativeLibrary.Load` + `GetExport`, `GetProcAddress` via `Marshal`, or manually built delegate function pointers will not be detected.
 
-**Detection:** `ComputeHash()`, `GetHash()` calls, `.cctor` (static constructor) checks, nested type verification.
-
-**Workarounds:**
-- Extract pure algorithms before integrity check runs
-- Bypass check in decompiled version
-- Frida hooks to disable checks
-- Static analysis only (don't execute modified code)
-- Replace checked IL with unchecked version
 </details>
-
-<details>
-<summary><b>Process Isolation (AppContainer, Sandbox, VM)</b></summary>
-
-**Problem:** Binary runs in protected environment. Cannot access resources or inject code.
-
-**Workarounds:**
-- Run in matching environment (Docker, VM)
-- Extract metadata without modification
-- Use static decompilation only
-- Cooperate with isolation mechanism (signed code)
-- Document expected behavior from outside
-</details>
-
-<details>
-<summary><b>Native C++ Mixed Assemblies</b></summary>
-
-**Problem:** .NET binaries with embedded C++ (P/Invoke, C++/CLI). C++ cannot be decompiled by dnspy.
-
-**Workarounds:**
-- IDA Pro or Ghidra for native code
-- Extract IL-only methods via dnspy
-- Frida to hook native functions
-- Binary instrumentation for native code
-- Combine IL analysis + native disassembly
-</details>
-
-## Requirements
-
-- Python 3.10+
-- .NET SDK 8.0+ (for CLI debugger)
-- dnspy.exe (for decompilation)
-
-## License
-
-MIT
-
-## Support
-
-- Issues: https://github.com/ZeraTS/dnspy-mcp/issues
-- Discussions: https://github.com/ZeraTS/dnspy-mcp/discussions

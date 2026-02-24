@@ -1,9 +1,12 @@
 {
   "version": 2,
-  "dgSpecHash": "68eoADCQfq6zMovfkpNEDlZD4fjTkUgoxjf22BFoVb+HrqY4TpxZ3h8kCRPkzTlle66itna2LXmOvBRbqNYzMg==",
+  "dgSpecHash": "dEj8o+izpPMUsJb+rva7eQMKtJqx6eFYHlJBEvjMNX+511vf1wS8a7gGSnkfLkcmhWFNkt52tc3AJS0csrJN4Q==",
   "success": true,
   "projectFilePath": "/root/.openclaw/workspace/dnspy-mcp/cli-debugger/dnspy-mcp.csproj",
   "expectedPackageFiles": [
+    "/root/.nuget/packages/icsharpcode.decompiler/8.2.0.7535/icsharpcode.decompiler.8.2.0.7535.nupkg.sha512",
+    "/root/.nuget/packages/system.collections.immutable/8.0.0/system.collections.immutable.8.0.0.nupkg.sha512",
+    "/root/.nuget/packages/system.reflection.metadata/8.0.0/system.reflection.metadata.8.0.0.nupkg.sha512",
     "/root/.nuget/packages/system.text.json/8.0.5/system.text.json.8.0.5.nupkg.sha512"
   ],
   "logs": []

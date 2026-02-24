@@ -5,21 +5,20 @@
     "worker_pool_size": 5,
     "request_timeout_seconds": 120,
     "max_binary_size_mb": 1024,
-    "api_key": "B_Yvw2S-PghhmdhdQVSoNFgZfgAwKTHrs61YZ-2j4ec"
+    "api_key": null,
+    "health_public": false,
+    "allowed_binary_dirs": []
   },
   "dnspy": {
     "path": "/opt/dnspy/dnSpy.exe",
+    "cli_path": "/opt/dnspy-mcp/cli-debugger/bin/Release/net8.0/dnspy-mcp.dll",
     "timeout_seconds": 60
   },
   "logging": {
     "level": "INFO",
-    "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    "format": "json"
   },
   "features": {
-    "enable_obfuscation_analysis": true,
-    "enable_batch_processing": true,
-    "enable_cache": true,
-    "cache_ttl_seconds": 3600,
     "enable_caching": true,
     "enable_rate_limiting": true,
     "enable_metrics": true,

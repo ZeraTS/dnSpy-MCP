@@ -13,3 +13,6 @@
 /root/.openclaw/workspace/dnspy-mcp/cli-debugger/obj/Release/net8.0/dnspy-mcp.pdb
 /root/.openclaw/workspace/dnspy-mcp/cli-debugger/obj/Release/net8.0/dnspy-mcp.genruntimeconfig.cache
 /root/.openclaw/workspace/dnspy-mcp/cli-debugger/obj/Release/net8.0/ref/dnspy-mcp.dll
+/root/.openclaw/workspace/dnspy-mcp/cli-debugger/obj/Release/net8.0/dnspy-mcp.csproj.AssemblyReference.cache
+/root/.openclaw/workspace/dnspy-mcp/cli-debugger/bin/Release/net8.0/ICSharpCode.Decompiler.dll
+/root/.openclaw/workspace/dnspy-mcp/cli-debugger/obj/Release/net8.0/dnspy-mcp.csproj.CopyComplete
