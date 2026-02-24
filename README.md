@@ -117,12 +117,7 @@ The name obfuscation detector flags members with single-letter names or compiler
 
 </details>
 
-<details>
-<summary>get_protection_report has a 20-second decompilation budget</summary>
 
-The method-level analysis (control flow obfuscation, integrity check detection, VM dispatcher detection) stops after 20 seconds of decompilation time. For large assemblies (500+ types), some methods near the end of the type list may not be analysed. Fingerprinting, name obfuscation, and PE section checks are not affected by the budget.
-
-</details>
 
 <details>
 <summary>String encryption detection requires obfuscated method names</summary>
@@ -144,3 +139,13 @@ ICSharpCode.Decompiler attempts to resolve referenced assemblies from the same d
 The `list_pinvokes` and anti-debug P/Invoke scanner only detect methods decorated with `[DllImport]`. Dynamic P/Invoke patterns using `NativeLibrary.Load` + `GetExport`, `GetProcAddress` via `Marshal`, or manually built delegate function pointers will not be detected.
 
 </details>
+
+## Credits
+
+### Detect It Easy (DIE)
+
+The protection detection logic in `Tools/Security/` (`AntiDebugTools`, `AntiTamperTools`, `ProtectionReportTools`) draws directly from the detection approach used by [Detect It Easy](https://github.com/horsicq/Detect-It-Easy) by horsicq.
+
+DIE's core insight — that protector fingerprinting should operate on raw binary byte patterns, PE section metadata, and metadata string heap searches rather than decompiled source — is the foundation of the sub-millisecond detection performance in this project. Several obfuscator signatures (ConfuserEx, Eazfuscator, KoiVM, .NET Reactor, VMProtect, Dotfuscator, MPRESS, Themida, and others) are adapted from DIE's PE signature scripts under `db/PE/`.
+
+DIE is maintained by horsicq and contributors at https://github.com/horsicq/Detect-It-Easy and is available under the MIT license.
