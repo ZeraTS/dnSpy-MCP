@@ -50,6 +50,10 @@ Add to `claude_desktop_config.json`:
 | `find_methods` | Find methods in the assembly, optionally filtered by name pattern | `assemblyPath`, `pattern?` |
 | `search_strings` | Search for string literals in the assembly's decompiled source | `assemblyPath`, `pattern`, `useRegex?` |
 | `search_members` | Search for types, methods, fields, and properties by name pattern | `assemblyPath`, `pattern` |
+| `set_breakpoint` | Set a virtual breakpoint on a method at a specific IL offset | `assemblyPath`, `typeName`, `methodName`, `ilOffset` |
+| `list_breakpoints` | List all active virtual breakpoints | |
+| `inspect_breakpoint` | Show IL at a breakpoint offset, infer stack types, and find all callers of the method | `id` |
+| `clear_breakpoints` | Remove all virtual breakpoints or a specific one by id | `id?` |
 | `detect_anti_debug` | Static analysis to detect anti-debug techniques across 7 categories | `assemblyPath` |
 | `detect_anti_tamper` | Static analysis to detect obfuscation and anti-tamper protections | `assemblyPath` |
 | `get_protection_report` | Aggregate anti-debug and anti-tamper analysis into a report with risk score (0-10) and bypass recommendations | `assemblyPath` |
@@ -93,12 +97,14 @@ Add to `claude_desktop_config.json`:
 src/DnSpyMcp/
 ├── Program.cs
 ├── Core/
-│   └── AssemblyCache.cs        Thread-safe decompiler cache (keyed by path + mtime)
+│   ├── AssemblyCache.cs        Thread-safe decompiler cache (keyed by path + mtime)
+│   └── BreakpointRegistry.cs  In-memory virtual breakpoint store
 ├── Models/
 │   └── Results.cs              All result record types
 └── Tools/
     ├── Analysis/
     │   ├── AnalysisTools.cs    PE info, resources, token resolution, P/Invokes, attributes
+    │   ├── BreakpointTools.cs  Virtual breakpoints: set, list, inspect, clear
     │   ├── DecompileTools.cs   C# decompilation, IL disassembly
     │   ├── InspectTools.cs     Type and method inspection
     │   └── SearchTools.cs      Type/method/member/string search
