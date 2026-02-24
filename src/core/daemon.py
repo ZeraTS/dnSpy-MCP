@@ -35,9 +35,6 @@ from src.utils.structured_logging import StructuredLogger
 from src.features.metrics import MetricsCollector
 from src.features.webhooks import WebhookManager, WebhookEventTypes
 
-
-# ─── Configuration ────────────────────────────────────────────────────────────
-
 class Config:
     def __init__(self):
         self.config_path = Path(os.getenv("DNSPY_CONFIG_PATH", "./config.json"))
@@ -47,12 +44,12 @@ class Config:
         defaults = {
             "daemon": {
                 "port": 9001,
-                "host": "0.0.0.0",          # bind all interfaces on hardened host
+                "host": "0.0.0.0",
                 "worker_pool_size": 5,
                 "request_timeout_seconds": 120,
-                "api_key": None,             # MUST be set via env or config; no insecure default
-                "health_public": False,      # require API key on /health and /metrics
-                "allowed_binary_dirs": [],   # if non-empty, restrict binary paths to these dirs
+                "api_key": None,
+                "health_public": False,
+                "allowed_binary_dirs": [],
             },
             "features": {
                 "enable_caching": True,
@@ -86,14 +83,11 @@ class Config:
                 return default
         return val
 
-
 config = Config()
 logger = StructuredLogger(
     "daemon",
     json_output=config.get("features.enable_structured_logging", True)
 )
-
-# ─── Runtime config (env overrides config file) ───────────────────────────────
 
 DAEMON_PORT = int(os.getenv("DNSPY_DAEMON_PORT", config.get("daemon.port", 9001)))
 DNSPY_HOST  = os.getenv("DNSPY_HOST", config.get("daemon.host", "0.0.0.0"))
@@ -107,7 +101,6 @@ ALLOWED_DIRS = [
     ) if d
 ]
 
-# API key — required; no hardcoded default accepted
 API_KEY: Optional[str] = os.getenv("DNSPY_API_KEY") or config.get("daemon.api_key")
 
 FEATURES = {
@@ -133,9 +126,6 @@ stats = {
     "start_time": datetime.utcnow(),
 }
 
-
-# ─── Startup validation ───────────────────────────────────────────────────────
-
 def _validate_startup():
     if not API_KEY:
         print(
@@ -158,9 +148,6 @@ def _validate_startup():
         logger.logger.info(f"Allowed binary dirs: {[str(d) for d in ALLOWED_DIRS]}")
     logger.logger.info(f"Features: {FEATURES}")
 
-
-# ─── Path validation ──────────────────────────────────────────────────────────
-
 def _validate_binary_path(binary_path: str) -> tuple[Optional[Path], Optional[str]]:
     """
     Validate a binary path: must exist and (if configured) be within an allowed dir.
@@ -177,11 +164,9 @@ def _validate_binary_path(binary_path: str) -> tuple[Optional[Path], Optional[st
     if not p.is_file():
         return None, f"Not a file: {binary_path}"
 
-    # Extension check — only .dll and .exe
     if p.suffix.lower() not in {".dll", ".exe"}:
         return None, f"Unsupported file type: {p.suffix} (expected .dll or .exe)"
 
-    # Allowed dirs check (path traversal protection)
     if ALLOWED_DIRS:
         if not any(str(p).startswith(str(d)) for d in ALLOWED_DIRS):
             return None, (
@@ -191,16 +176,11 @@ def _validate_binary_path(binary_path: str) -> tuple[Optional[Path], Optional[st
 
     return p, None
 
-
-# ─── Middleware ───────────────────────────────────────────────────────────────
-
 def _hash_api_key(key: str) -> str:
     return hashlib.sha256(key.encode()).hexdigest()[:8]
 
-
 @web.middleware
 async def auth_middleware(request: web.Request, handler):
-    # Public health/metrics (when configured)
     if HEALTH_PUBLIC and request.path in ("/health", "/metrics") and request.method == "GET":
         return await handler(request)
 
@@ -213,7 +193,6 @@ async def auth_middleware(request: web.Request, handler):
         return web.json_response({"error": "Unauthorized"}, status=401)
 
     return await handler(request)
-
 
 @web.middleware
 async def metrics_middleware(request: web.Request, handler):
@@ -237,9 +216,6 @@ async def metrics_middleware(request: web.Request, handler):
         if FEATURES["metrics"]:
             metrics.record_request(request.path, duration_ms, 500)
         raise
-
-
-# ─── Request models ───────────────────────────────────────────────────────────
 
 class BinaryRequest(BaseModel):
     binary_path: str
@@ -271,21 +247,18 @@ class BreakpointRequest(BaseModel):
 class SearchRequest(BaseModel):
     binary_path: str
     pattern: str
-    kind: str = "string"    # "string" | "member"
+    kind: str = "string"
     use_regex: bool = False
 
 class TokenRequest(BaseModel):
     binary_path: str
-    token: str              # e.g. "0x06000001"
+    token: str
 
 class BatchRequest(BaseModel):
     binaries: list[str]
     output_format: str = "json"
     analyze_obfuscation: bool = False
     webhook_url: str | None = None
-
-
-# ─── Worker factory helper ────────────────────────────────────────────────────
 
 def _make_worker(binary_path: Path) -> DnsyWorker:
     worker_id = str(uuid.uuid4())[:8]
@@ -299,7 +272,6 @@ def _make_worker(binary_path: Path) -> DnsyWorker:
     logger.worker_spawn(worker_id, str(binary_path))
     return worker
 
-
 async def _finish_worker(worker: DnsyWorker, start: float, operation: str):
     await worker.cleanup()
     workers.pop(worker.worker_id, None)
@@ -308,23 +280,17 @@ async def _finish_worker(worker: DnsyWorker, start: float, operation: str):
     if FEATURES["metrics"]:
         metrics.record_worker(operation, duration_ms, success=True)
 
-
 def _rate_check() -> bool:
     return not (FEATURES["rate_limiting"] and not rate_limiter.is_allowed(API_KEY))
-
 
 def _cache_get(key: str, op: str, params: dict):
     if not FEATURES["caching"]:
         return None
     return cache.get(key, op, params)
 
-
 def _cache_set(key: str, op: str, params: dict, value):
     if FEATURES["caching"]:
         cache.set(key, op, params, value)
-
-
-# ─── Endpoint handlers ────────────────────────────────────────────────────────
 
 async def handle_decompile(request: web.Request) -> web.Response:
     stats["total_requests"] += 1
@@ -370,7 +336,6 @@ async def handle_decompile(request: web.Request) -> web.Response:
         logger.error(f"/api/decompile: {e}")
         return web.json_response({"error": str(e)}, status=500)
 
-
 async def handle_decompile_type(request: web.Request) -> web.Response:
     stats["total_requests"] += 1
     try:
@@ -395,7 +360,6 @@ async def handle_decompile_type(request: web.Request) -> web.Response:
     except Exception as e:
         stats["failed_requests"] += 1
         return web.json_response({"error": str(e)}, status=500)
-
 
 async def handle_decompile_method(request: web.Request) -> web.Response:
     stats["total_requests"] += 1
@@ -427,7 +391,6 @@ async def handle_decompile_method(request: web.Request) -> web.Response:
         stats["failed_requests"] += 1
         return web.json_response({"error": str(e)}, status=500)
 
-
 async def handle_dump_il(request: web.Request) -> web.Response:
     stats["total_requests"] += 1
     try:
@@ -452,7 +415,6 @@ async def handle_dump_il(request: web.Request) -> web.Response:
     except Exception as e:
         stats["failed_requests"] += 1
         return web.json_response({"error": str(e)}, status=500)
-
 
 async def handle_list_types(request: web.Request) -> web.Response:
     stats["total_requests"] += 1
@@ -482,7 +444,6 @@ async def handle_list_types(request: web.Request) -> web.Response:
         stats["failed_requests"] += 1
         return web.json_response({"error": str(e)}, status=500)
 
-
 async def handle_list_methods(request: web.Request) -> web.Response:
     stats["total_requests"] += 1
     try:
@@ -504,7 +465,6 @@ async def handle_list_methods(request: web.Request) -> web.Response:
     except Exception as e:
         stats["failed_requests"] += 1
         return web.json_response({"error": str(e)}, status=500)
-
 
 async def handle_inspect_type(request: web.Request) -> web.Response:
     stats["total_requests"] += 1
@@ -531,7 +491,6 @@ async def handle_inspect_type(request: web.Request) -> web.Response:
         stats["failed_requests"] += 1
         return web.json_response({"error": str(e)}, status=500)
 
-
 async def handle_inspect_method(request: web.Request) -> web.Response:
     stats["total_requests"] += 1
     try:
@@ -556,7 +515,6 @@ async def handle_inspect_method(request: web.Request) -> web.Response:
     except Exception as e:
         stats["failed_requests"] += 1
         return web.json_response({"error": str(e)}, status=500)
-
 
 async def handle_search(request: web.Request) -> web.Response:
     stats["total_requests"] += 1
@@ -588,7 +546,6 @@ async def handle_search(request: web.Request) -> web.Response:
         stats["failed_requests"] += 1
         return web.json_response({"error": str(e)}, status=500)
 
-
 async def handle_pe_info(request: web.Request) -> web.Response:
     stats["total_requests"] += 1
     try:
@@ -614,7 +571,6 @@ async def handle_pe_info(request: web.Request) -> web.Response:
         stats["failed_requests"] += 1
         return web.json_response({"error": str(e)}, status=500)
 
-
 async def handle_get_resources(request: web.Request) -> web.Response:
     stats["total_requests"] += 1
     try:
@@ -633,7 +589,6 @@ async def handle_get_resources(request: web.Request) -> web.Response:
     except Exception as e:
         stats["failed_requests"] += 1
         return web.json_response({"error": str(e)}, status=500)
-
 
 async def handle_analyze_obfuscation(request: web.Request) -> web.Response:
     stats["total_requests"] += 1
@@ -656,7 +611,6 @@ async def handle_analyze_obfuscation(request: web.Request) -> web.Response:
     except Exception as e:
         stats["failed_requests"] += 1
         return web.json_response({"error": str(e)}, status=500)
-
 
 async def handle_extract_class(request: web.Request) -> web.Response:
     stats["total_requests"] += 1
@@ -684,7 +638,6 @@ async def handle_extract_class(request: web.Request) -> web.Response:
         stats["failed_requests"] += 1
         return web.json_response({"error": str(e)}, status=500)
 
-
 async def handle_list_pinvokes(request: web.Request) -> web.Response:
     stats["total_requests"] += 1
     try:
@@ -703,7 +656,6 @@ async def handle_list_pinvokes(request: web.Request) -> web.Response:
     except Exception as e:
         stats["failed_requests"] += 1
         return web.json_response({"error": str(e)}, status=500)
-
 
 async def handle_find_attributes(request: web.Request) -> web.Response:
     stats["total_requests"] += 1
@@ -728,7 +680,6 @@ async def handle_find_attributes(request: web.Request) -> web.Response:
         stats["failed_requests"] += 1
         return web.json_response({"error": str(e)}, status=500)
 
-
 async def handle_resolve_token(request: web.Request) -> web.Response:
     stats["total_requests"] += 1
     try:
@@ -751,7 +702,6 @@ async def handle_resolve_token(request: web.Request) -> web.Response:
         stats["failed_requests"] += 1
         return web.json_response({"error": str(e)}, status=500)
 
-
 async def handle_set_breakpoint(request: web.Request) -> web.Response:
     stats["total_requests"] += 1
     try:
@@ -773,7 +723,6 @@ async def handle_set_breakpoint(request: web.Request) -> web.Response:
     except Exception as e:
         stats["failed_requests"] += 1
         return web.json_response({"error": str(e)}, status=500)
-
 
 async def handle_batch_dump(request: web.Request) -> web.Response:
     stats["total_requests"] += 1
@@ -817,7 +766,6 @@ async def handle_batch_dump(request: web.Request) -> web.Response:
         stats["failed_requests"] += 1
         return web.json_response({"error": str(e)}, status=500)
 
-
 async def handle_health(request: web.Request) -> web.Response:
     uptime = (datetime.utcnow() - stats["start_time"]).total_seconds()
     total = stats["total_requests"]
@@ -847,12 +795,10 @@ async def handle_health(request: web.Request) -> web.Response:
         },
     })
 
-
 async def handle_metrics(request: web.Request) -> web.Response:
     if not FEATURES["metrics"]:
         return web.Response(text="# Metrics disabled\n", content_type="text/plain")
     return web.Response(text=metrics.to_prometheus(), content_type="text/plain")
-
 
 async def handle_cleanup_all(request: web.Request) -> web.Response:
     count = len(workers)
@@ -862,20 +808,15 @@ async def handle_cleanup_all(request: web.Request) -> web.Response:
     logger.logger.info(f"Cleaned up {count} workers")
     return web.json_response({"status": "success", "cleaned_up": count})
 
-
-# ─── App factory ──────────────────────────────────────────────────────────────
-
 def create_app() -> web.Application:
     app = web.Application(middlewares=[metrics_middleware, auth_middleware])
 
-    # Original endpoints
     app.router.add_post("/api/decompile",            handle_decompile)
     app.router.add_post("/api/analyze-obfuscation",  handle_analyze_obfuscation)
     app.router.add_post("/api/extract-class",        handle_extract_class)
     app.router.add_post("/api/set-breakpoint",       handle_set_breakpoint)
     app.router.add_post("/api/batch-dump",           handle_batch_dump)
 
-    # New endpoints
     app.router.add_post("/api/decompile-type",       handle_decompile_type)
     app.router.add_post("/api/decompile-method",     handle_decompile_method)
     app.router.add_post("/api/dump-il",              handle_dump_il)
@@ -890,13 +831,11 @@ def create_app() -> web.Application:
     app.router.add_post("/api/find-attributes",      handle_find_attributes)
     app.router.add_post("/api/resolve-token",        handle_resolve_token)
 
-    # Infrastructure
     app.router.add_get("/health",   handle_health)
     app.router.add_get("/metrics",  handle_metrics)
     app.router.add_post("/cleanup", handle_cleanup_all)
 
     return app
-
 
 async def main():
     _validate_startup()
@@ -916,7 +855,6 @@ async def main():
         for worker in list(workers.values()):
             await worker.cleanup()
         await runner.cleanup()
-
 
 if __name__ == "__main__":
     asyncio.run(main())

@@ -3,7 +3,6 @@ import logging
 import re
 from typing import List, Tuple
 
-
 def setup_logging(name: str) -> logging.Logger:
     logger = logging.getLogger(name)
     handler = logging.StreamHandler()
@@ -15,11 +14,10 @@ def setup_logging(name: str) -> logging.Logger:
     logger.setLevel(logging.INFO)
     return logger
 
-
 def parse_range_expression(expr: str) -> List[int]:
     result = []
     parts = expr.split(',')
-    
+
     for part in parts:
         part = part.strip()
         if '-' in part and part[0] != '-':
@@ -27,5 +25,5 @@ def parse_range_expression(expr: str) -> List[int]:
             result.extend(range(int(start), int(end) + 1))
         else:
             result.append(int(part))
-    
+
     return result

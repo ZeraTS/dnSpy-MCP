@@ -1,7 +1,5 @@
 namespace DnSpyMcp.Models;
 
-
-
 public record TypeInfo(
     string FullName,
     string Namespace,
@@ -112,8 +110,6 @@ public class MethodDetailInfo
     public string? ILCode { get; init; }
 }
 
-
-
 public record AntiDebugFinding(
     string Category,
     string Technique,
@@ -122,8 +118,6 @@ public record AntiDebugFinding(
     string Severity
 );
 
-
-
 public record AntiTamperFinding(
     string Category,
     string Technique,
@@ -131,8 +125,6 @@ public record AntiTamperFinding(
     string Location,
     string Confidence
 );
-
-
 
 public class ProtectionReport
 {
@@ -144,4 +136,24 @@ public class ProtectionReport
     public List<AntiTamperFinding> AntiTamperFindings { get; init; } = [];
     public List<string> RecommendedBypasses { get; init; } = [];
     public DateTime AnalysedAt { get; init; }
+}
+
+public record ILInstruction(int Offset, string OpCode, string Operand, string StackEffect);
+
+public class BreakpointContext
+{
+    public string Id { get; init; } = "";
+    public string AssemblyPath { get; init; } = "";
+    public string TypeName { get; init; } = "";
+    public string MethodName { get; init; } = "";
+    public int? ILOffset { get; init; }
+    public string MethodSignature { get; init; } = "";
+    public int LocalCount { get; init; }
+    public int MaxStack { get; init; }
+    public ILInstruction? TargetInstruction { get; init; }
+    public List<ILInstruction> SurroundingIL { get; init; } = [];
+    public List<string> InferredStackTypes { get; init; } = [];
+    public string? DecompiledSource { get; init; }
+    public List<string> Callers { get; init; } = [];
+    public DateTime CreatedAt { get; init; }
 }

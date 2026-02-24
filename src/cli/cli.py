@@ -16,7 +16,7 @@ class DnspyClient:
         self.api_key = api_key
         self.session = requests.Session()
         self.session.headers.update({"X-API-Key": api_key})
-    
+
     def _request(self, method: str, endpoint: str, **kwargs) -> dict:
         url = urljoin(self.base_url, endpoint)
         try:
@@ -32,23 +32,23 @@ class DnspyClient:
             raise click.ClickException(f"Cannot connect to {self.base_url}")
         except requests.exceptions.Timeout:
             raise click.ClickException("Request timeout")
-    
+
     def decompile(self, binary_path: str, output_format: str = "vscode", analyze_obf: bool = False) -> dict:
         return self._request("POST", "/api/decompile", json={
             "binary_path": binary_path,
             "output_format": output_format,
             "analyze_obfuscation": analyze_obf
         })
-    
+
     def analyze_obfuscation(self, binary_path: str) -> dict:
         return self._request("POST", "/api/analyze-obfuscation", json={"binary_path": binary_path})
-    
+
     def extract_class(self, binary_path: str, class_name: str) -> dict:
         return self._request("POST", "/api/extract-class", json={
             "binary_path": binary_path,
             "class_name": class_name
         })
-    
+
     def set_breakpoint(self, binary_path: str, type_name: str, method_name: str, il_offset: Optional[int] = None) -> dict:
         return self._request("POST", "/api/set-breakpoint", json={
             "binary_path": binary_path,
@@ -56,20 +56,19 @@ class DnspyClient:
             "method_name": method_name,
             "il_offset": il_offset
         })
-    
+
     def batch_dump(self, binaries: list, output_format: str = "vscode", analyze_obf: bool = False) -> dict:
         return self._request("POST", "/api/batch-dump", json={
             "binaries": binaries,
             "output_format": output_format,
             "analyze_obfuscation": analyze_obf
         })
-    
+
     def health(self) -> dict:
         return self._request("GET", "/health")
-    
+
     def cleanup(self) -> dict:
         return self._request("POST", "/cleanup")
-
 
 @click.group()
 @click.option("--host", default="localhost", envvar="DNSPY_HOST", help="Daemon host")
@@ -79,10 +78,9 @@ class DnspyClient:
 def cli(ctx, host, port, api_key):
     if not api_key:
         api_key = "default-insecure-key-change-me"
-    
+
     ctx.ensure_object(dict)
     ctx.obj["client"] = DnspyClient(host, port, api_key)
-
 
 @cli.command()
 @click.argument("binary_path")
@@ -106,7 +104,6 @@ def decompile(ctx, binary_path, output_format, analyze_obf, json_output):
         raise
     except Exception as e:
         raise click.ClickException(str(e))
-
 
 @cli.command()
 @click.argument("binary_path")
@@ -132,7 +129,6 @@ def analyze(ctx, binary_path, json_output):
     except Exception as e:
         raise click.ClickException(str(e))
 
-
 @cli.command()
 @click.argument("binary_path")
 @click.argument("class_name")
@@ -143,7 +139,7 @@ def extract(ctx, binary_path, class_name, output):
     try:
         result = ctx.obj["client"].extract_class(binary_path, class_name)
         source = result.get("class_source", "")
-        
+
         if output:
             Path(output).write_text(source)
             click.echo(f"Saved to {output}")
@@ -153,7 +149,6 @@ def extract(ctx, binary_path, class_name, output):
         raise
     except Exception as e:
         raise click.ClickException(str(e))
-
 
 @cli.command()
 @click.argument("binary_path")
@@ -179,7 +174,6 @@ def breakpoint(ctx, binary_path, type_name, method_name, il_offset, json_output)
     except Exception as e:
         raise click.ClickException(str(e))
 
-
 @cli.command()
 @click.argument("binaries", nargs=-1, required=True)
 @click.option("--format", "output_format", default="vscode", type=click.Choice(["vscode", "json", "markdown"]))
@@ -202,7 +196,6 @@ def batch(ctx, binaries, output_format, analyze_obf, json_output):
     except Exception as e:
         raise click.ClickException(str(e))
 
-
 @cli.command()
 @click.option("--json-output", is_flag=True, help="Output as JSON")
 @click.pass_context
@@ -216,7 +209,7 @@ def status(ctx, json_output):
             click.echo(f"Status: {result.get('status', 'unknown')}")
             click.echo(f"Uptime: {result.get('uptime_seconds', 0):.0f}s")
             click.echo(f"Active Workers: {result.get('active_workers', 0)}/{result.get('worker_pool_size', 0)}")
-            
+
             stats = result.get("stats", {})
             click.echo(f"\nRequests:")
             click.echo(f"  Total: {stats.get('total_requests', 0)}")
@@ -227,7 +220,6 @@ def status(ctx, json_output):
         raise
     except Exception as e:
         raise click.ClickException(str(e))
-
 
 @cli.command()
 @click.confirmation_option(prompt="Are you sure?")
@@ -241,7 +233,6 @@ def cleanup(ctx):
         raise
     except Exception as e:
         raise click.ClickException(str(e))
-
 
 if __name__ == "__main__":
     cli(obj={})

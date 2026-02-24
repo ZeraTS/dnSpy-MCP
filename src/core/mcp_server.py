@@ -22,7 +22,6 @@ DAEMON_URL    = os.getenv("DNSPY_DAEMON_URL", "http://localhost:9001")
 API_KEY       = os.getenv("DNSPY_API_KEY", "")
 DAEMON_TIMEOUT = int(os.getenv("DNSPY_REQUEST_TIMEOUT", "120"))
 
-
 class DnsyMCPServer:
     def __init__(self, daemon_url: str = DAEMON_URL, api_key: str = API_KEY):
         if not api_key:
@@ -34,8 +33,6 @@ class DnsyMCPServer:
         self.server = Server("dnspy-mcp-server")
         self._setup_tools()
 
-    # ─── Auth headers ─────────────────────────────────────────────────────────
-
     @property
     def _headers(self) -> dict:
         return {
@@ -43,11 +40,7 @@ class DnsyMCPServer:
             "Content-Type": "application/json",
         }
 
-    # ─── Tool registration ────────────────────────────────────────────────────
-
     def _setup_tools(self):
-
-        # ── Whole-assembly decompile ──────────────────────────────────────────
 
         @self.server.call_tool()
         async def decompile(
@@ -73,15 +66,13 @@ class DnsyMCPServer:
                 "analyze_obfuscation": analyze_obfuscation,
             })
 
-        # ── Type / method decompilation ───────────────────────────────────────
-
         @self.server.call_tool()
         async def decompile_type(
             binary_path: str,
             type_name: str,
         ) -> list[TextContent]:
             """
-            Decompile a specific type to C# source.
+            Decompile a specific type to C
 
             Args:
                 binary_path: Path to .NET assembly
@@ -99,7 +90,7 @@ class DnsyMCPServer:
             method_name: str,
         ) -> list[TextContent]:
             """
-            Decompile a specific method to C# source.
+            Decompile a specific method to C
 
             Args:
                 binary_path: Path to .NET assembly
@@ -111,8 +102,6 @@ class DnsyMCPServer:
                 "type_name": type_name,
                 "method_name": method_name,
             })
-
-        # ── IL disassembly ────────────────────────────────────────────────────
 
         @self.server.call_tool()
         async def dump_il(
@@ -133,8 +122,6 @@ class DnsyMCPServer:
                 "type_name": type_name,
                 "method_name": method_name,
             })
-
-        # ── Type / method enumeration ─────────────────────────────────────────
 
         @self.server.call_tool()
         async def list_types(binary_path: str) -> list[TextContent]:
@@ -163,8 +150,6 @@ class DnsyMCPServer:
                 "type_name": type_name,
             })
 
-        # ── Inspection ────────────────────────────────────────────────────────
-
         @self.server.call_tool()
         async def inspect_type(
             binary_path: str,
@@ -177,7 +162,7 @@ class DnsyMCPServer:
             Args:
                 binary_path: Path to .NET assembly
                 type_name: Fully-qualified type name
-                include_source: Also return decompiled C# source
+                include_source: Also return decompiled C
             """
             return await self._post("/api/inspect-type", {
                 "binary_path": binary_path,
@@ -193,7 +178,7 @@ class DnsyMCPServer:
             include_il: bool = False,
         ) -> list[TextContent]:
             """
-            Inspect a method — signature, parameters, decompiled C# source, optionally IL.
+            Inspect a method — signature, parameters, decompiled C
 
             Args:
                 binary_path: Path to .NET assembly
@@ -207,8 +192,6 @@ class DnsyMCPServer:
                 "method_name": method_name,
                 "include_il": include_il,
             })
-
-        # ── Search ────────────────────────────────────────────────────────────
 
         @self.server.call_tool()
         async def search_strings(
@@ -250,8 +233,6 @@ class DnsyMCPServer:
                 "kind": "member",
             })
 
-        # ── PE / metadata analysis ────────────────────────────────────────────
-
         @self.server.call_tool()
         async def pe_info(binary_path: str) -> list[TextContent]:
             """
@@ -283,8 +264,6 @@ class DnsyMCPServer:
                 binary_path: Path to .NET assembly
             """
             return await self._post("/api/analyze-obfuscation", {"binary_path": binary_path})
-
-        # ── Native interop / attributes ───────────────────────────────────────
 
         @self.server.call_tool()
         async def list_pinvokes(binary_path: str) -> list[TextContent]:
@@ -331,8 +310,6 @@ class DnsyMCPServer:
                 "token": token,
             })
 
-        # ── Batch / breakpoints ───────────────────────────────────────────────
-
         @self.server.call_tool()
         async def batch_dump(
             binaries: list,
@@ -377,8 +354,6 @@ class DnsyMCPServer:
                 "il_offset": il_offset,
             })
 
-        # ── Infrastructure ────────────────────────────────────────────────────
-
         @self.server.call_tool()
         async def health_check() -> list[TextContent]:
             """Check daemon health, uptime, active workers, and feature flags."""
@@ -388,8 +363,6 @@ class DnsyMCPServer:
         async def cleanup_workers() -> list[TextContent]:
             """Terminate and clean up all active worker processes."""
             return await self._post("/cleanup", {})
-
-    # ─── HTTP helpers ─────────────────────────────────────────────────────────
 
     async def _post(self, endpoint: str, payload: dict) -> list[TextContent]:
         url = urljoin(self.daemon_url, endpoint)
@@ -444,11 +417,9 @@ class DnsyMCPServer:
         logger.info(f"Starting dnspy-mcp MCP server → daemon at {self.daemon_url}")
         await self.server.astart()
 
-
 async def main():
     server = DnsyMCPServer()
     await server.start()
-
 
 if __name__ == "__main__":
     asyncio.run(main())

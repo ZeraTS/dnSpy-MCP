@@ -2,8 +2,8 @@
 """
 dnspy-mcp Worker
 
-Calls the C# CLI tool (dnspy-mcp.dll / ICSharpCode.Decompiler) as a subprocess
-and returns structured JSON results. Never executes the target assembly — 
+Calls the C
+and returns structured JSON results. Never executes the target assembly —
 all analysis is static.
 """
 import asyncio
@@ -18,10 +18,6 @@ from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger("dnspy-mcp.worker")
 
-# ─── CLI tool paths ───────────────────────────────────────────────────────────
-
-# Path to the built dnspy-mcp.dll (C# CLI tool)
-# Can be overridden with DNSPY_CLI_PATH env var
 DEFAULT_CLI_SEARCH = [
     "/opt/dnspy-mcp/cli-debugger/bin/Release/net8.0/dnspy-mcp.dll",
     "/opt/dnspy-mcp/cli-debugger/bin/Debug/net8.0/dnspy-mcp.dll",
@@ -35,10 +31,9 @@ CLI_PATH = os.getenv("DNSPY_CLI_PATH") or next(
 DOTNET_CMD = os.getenv("DOTNET_PATH", "dotnet")
 CLI_TIMEOUT = int(os.getenv("DNSPY_CLI_TIMEOUT", "60"))
 
-
 async def _run_cli(args: List[str], timeout: int = CLI_TIMEOUT) -> Dict[str, Any]:
     """
-    Invoke the C# CLI tool via dotnet and capture JSON output.
+    Invoke the C
     Returns parsed JSON dict or an error dict.
     """
     if not CLI_PATH:
@@ -78,7 +73,6 @@ async def _run_cli(args: List[str], timeout: int = CLI_TIMEOUT) -> Dict[str, Any
         try:
             return json.loads(stdout_str)
         except json.JSONDecodeError:
-            # CLI returned raw text (e.g. for --decompile); wrap it
             return {"content": stdout_str}
 
     except FileNotFoundError:
@@ -87,14 +81,11 @@ async def _run_cli(args: List[str], timeout: int = CLI_TIMEOUT) -> Dict[str, Any
         logger.error(f"CLI error: {e}")
         return {"error": str(e)}
 
-
-# ─── Worker class ─────────────────────────────────────────────────────────────
-
 class DnsyWorker:
     def __init__(
         self,
         worker_id: str,
-        dnspy_path: str,           # kept for backward compat; not used (we use CLI)
+        dnspy_path: str,
         binary_path: str,
         temp_dir: Path,
     ):
@@ -128,8 +119,6 @@ class DnsyWorker:
         except Exception:
             pass
 
-    # ─── Core decompilation ───────────────────────────────────────────────────
-
     async def decompile(
         self,
         output_format: str = "json",
@@ -148,15 +137,12 @@ class DnsyWorker:
             "format": output_format,
         }
 
-        # --- Metadata (types, methods) ---
         meta = await _run_cli(["--binary", str(self.binary_path), "--list-types"])
         result["types"] = meta if isinstance(meta, list) else meta.get("error", meta)
 
-        # --- PE info ---
         pe_info = await _run_cli(["--binary", str(self.binary_path), "--pe-info"])
         result["pe_info"] = pe_info
 
-        # --- Extract specific classes ---
         if extract_classes:
             extracted = {}
             for cls in extract_classes:
@@ -167,11 +153,9 @@ class DnsyWorker:
                 extracted[cls] = cls_src.get("content", cls_src.get("error", ""))
             result["extracted_classes"] = extracted
 
-        # --- Obfuscation analysis ---
         if analyze_obfuscation:
             result["obfuscation_analysis"] = await self.analyze_obfuscation()
 
-        # --- Output format ---
         if output_format == "markdown":
             md_path = await self._generate_markdown(result)
             result["markdown_path"] = md_path
@@ -194,8 +178,6 @@ class DnsyWorker:
             "--decompile-method", "--type", type_name, "--method", method_name,
         ])
 
-    # ─── IL dump ──────────────────────────────────────────────────────────────
-
     async def dump_il(
         self,
         type_name: Optional[str] = None,
@@ -208,8 +190,6 @@ class DnsyWorker:
             args += ["--method", method_name]
         return await _run_cli(args)
 
-    # ─── Search ───────────────────────────────────────────────────────────────
-
     async def search_strings(self, pattern: str, use_regex: bool = False) -> Dict[str, Any]:
         args = ["--binary", str(self.binary_path), "--search-string", pattern]
         if use_regex:
@@ -220,8 +200,6 @@ class DnsyWorker:
         return await _run_cli([
             "--binary", str(self.binary_path), "--search-member", pattern,
         ])
-
-    # ─── Type / method inspection ─────────────────────────────────────────────
 
     async def list_types(self) -> Dict[str, Any]:
         return await _run_cli(["--binary", str(self.binary_path), "--list-types"])
@@ -263,15 +241,11 @@ class DnsyWorker:
             args.append("--include-il")
         return await _run_cli(args)
 
-    # ─── PE info & resources ──────────────────────────────────────────────────
-
     async def get_pe_info(self) -> Dict[str, Any]:
         return await _run_cli(["--binary", str(self.binary_path), "--pe-info"])
 
     async def get_resources(self) -> Dict[str, Any]:
         return await _run_cli(["--binary", str(self.binary_path), "--get-resources"])
-
-    # ─── P/Invoke & attributes ────────────────────────────────────────────────
 
     async def list_pinvokes(self) -> Dict[str, Any]:
         return await _run_cli(["--binary", str(self.binary_path), "--list-pinvokes"])
@@ -286,8 +260,6 @@ class DnsyWorker:
         return await _run_cli([
             "--binary", str(self.binary_path), "--token", token_hex,
         ])
-
-    # ─── Breakpoint (stub — requires live debugger) ───────────────────────────
 
     async def set_breakpoint(
         self,
@@ -321,8 +293,6 @@ class DnsyWorker:
         bp_file.write_text(_json.dumps(existing, indent=2))
         return bp
 
-    # ─── Obfuscation analysis ─────────────────────────────────────────────────
-
     async def analyze_obfuscation(self) -> Dict[str, Any]:
         """
         Heuristic obfuscation detection via static binary inspection.
@@ -340,7 +310,6 @@ class DnsyWorker:
         try:
             data = self.binary_path.read_bytes()
 
-            # Known obfuscator signatures
             sigs = {
                 b"ConfuserEx": ("ConfuserEx", 0.90),
                 b"Confuser v": ("Confuser Classic", 0.85),
@@ -361,13 +330,11 @@ class DnsyWorker:
                     conf = max(conf, weight)
                     analysis["details"][name] = "Signature detected"
 
-            # Native compilation indicators
             if b".xdata" in data and b".pdata" in data:
                 analysis["techniques"].append("NativeAOT/ReadyToRun")
                 analysis["details"]["native"] = "PE sections .xdata/.pdata suggest native compilation"
                 conf = max(conf, 0.60)
 
-            # High entropy = encrypted/packed sections
             entropy = _calculate_entropy(data[:16384])
             analysis["details"]["header_entropy"] = round(entropy, 4)
             if entropy > 7.0:
@@ -378,7 +345,6 @@ class DnsyWorker:
                 analysis["techniques"].append("Elevated entropy (possible encryption)")
                 conf = max(conf, 0.40)
 
-            # Embedded DLL (large resource blob)
             if len(data) > 2_000_000:
                 analysis["details"]["size_mb"] = round(len(data) / 1_048_576, 2)
                 analysis["techniques"].append("Large binary (possible embedded resources)")
@@ -393,8 +359,6 @@ class DnsyWorker:
 
         return analysis
 
-    # ─── Output helpers ───────────────────────────────────────────────────────
-
     async def _generate_markdown(self, result: Dict[str, Any]) -> str:
         md_path = self.work_dir / "DECOMPILATION.md"
         pe = result.get("pe_info", {})
@@ -406,20 +370,15 @@ class DnsyWorker:
 **Binary:** {self.binary_path.name}
 **Worker ID:** {self.worker_id}
 
-## PE Info
 - Architecture: {pe.get('architecture', '?')}
 - Framework: {pe.get('targetFramework', '?')}
 - Version: {pe.get('assemblyVersion', '?')}
 - Signed: {pe.get('isSigned', '?')}
 - Managed: {pe.get('isManaged', '?')}
 
-## Types ({type_count} total)
-
 {chr(10).join(f'- `{t["fullName"]}`' for t in types[:50] if isinstance(t, dict)) if isinstance(types, list) else str(types)}
 
 {f"... and {len(types) - 50} more." if isinstance(types, list) and len(types) > 50 else ""}
-
-## Obfuscation Analysis
 
 {result.get('obfuscation_analysis', {}).get('techniques', 'Not analyzed')}
 """
@@ -441,7 +400,6 @@ class DnsyWorker:
             "root": str(output_dir),
             "vscode_config": str(output_dir / ".vscode" / "settings.json"),
         }
-
 
 def _calculate_entropy(data: bytes) -> float:
     if not data:

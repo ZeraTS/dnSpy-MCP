@@ -30,7 +30,6 @@ public class ProtectionReportTools
             var antiDebugFindings = _antiDebug.DetectAntiDebug(assemblyPath);
             var antiTamperFindings = _antiTamper.DetectAntiTamper(assemblyPath);
 
-
             var score = Math.Min(10.0,
                 antiDebugFindings.Count(f => f.Severity == "High") * 1.5 +
                 antiDebugFindings.Count(f => f.Severity == "Medium") * 0.75 +
@@ -40,13 +39,11 @@ public class ProtectionReportTools
                 antiTamperFindings.Count(f => f.Confidence == "Low") * 0.25
             );
 
-
             var summary = new List<string>();
             if (antiDebugFindings.Any(f => f.Category != "Error"))
                 summary.Add($"{antiDebugFindings.Count} anti-debug technique(s) detected: {string.Join(", ", antiDebugFindings.Select(f => f.Technique).Distinct())}");
             if (antiTamperFindings.Any(f => f.Category != "Error"))
                 summary.Add($"{antiTamperFindings.Count} anti-tamper/protection indicator(s): {string.Join(", ", antiTamperFindings.Select(f => f.Technique).Distinct())}");
-
 
             var bypasses = new List<string>();
             var allTechniques = antiDebugFindings.Select(f => f.Technique)
@@ -85,7 +82,6 @@ public class ProtectionReportTools
                 bypasses.Add("Use de4dot for Dotfuscator deobfuscation");
             if (allTechniques.Any(t => t.Contains(".NET Reactor")))
                 bypasses.Add("Use .NET Reactor deobfuscators or de4dot with NET_Reactor support");
-
 
             string assemblyName = GetAssemblyName(assemblyPath);
 

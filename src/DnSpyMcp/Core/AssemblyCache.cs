@@ -30,7 +30,6 @@ public class AssemblyCache
         var newEntry = new CacheEntry(decompiler, peFile, DateTime.UtcNow);
         _cache[key] = newEntry;
 
-
         foreach (var k in _cache.Keys.Where(k => k.StartsWith(abs + "|") && k != key).ToList())
             _cache.TryRemove(k, out _);
 

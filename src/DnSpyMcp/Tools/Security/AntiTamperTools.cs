@@ -243,7 +243,6 @@ public class AntiTamperTools
                     $"{intToStringMethods} method(s) with obfuscated name, signature (int|byte[]) → string — classic string decrypt stub pattern",
                     "Assembly-level", "High"));
 
-
         }
         catch { }
         return findings;
@@ -400,7 +399,7 @@ public class AntiTamperTools
             byte op = il[i++];
             switch (op)
             {
-                case 0x45: // switch
+                case 0x45: 
                     switches++;
                     if (i + 4 <= il.Length)
                     {
@@ -430,8 +429,6 @@ public class AntiTamperTools
             }
         }
     }
-
-    
 
     private static double CalcEntropy(ReadOnlySpan<byte> data)
     {
