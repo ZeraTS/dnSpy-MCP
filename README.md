@@ -2,64 +2,40 @@
 
 [![GitHub License](https://img.shields.io/github/license/ZeraTS/dnspy-mcp?style=flat-square)](LICENSE)
 [![GitHub Release](https://img.shields.io/github/release/ZeraTS/dnspy-mcp?style=flat-square)](https://github.com/ZeraTS/dnspy-mcp/releases)
+[![Python 3.10+](https://img.shields.io/badge/Python-3.10+-blue?style=flat-square)](https://www.python.org/)
 
-MCP server for .NET binary decompilation and analysis via dnspy. Includes integrated CLI debugger for lightweight reflection and metadata extraction.
+MCP server for .NET binary decompilation and analysis. Includes worker pool, caching, rate limiting, metrics, and integrated CLI debugger.
 
 **Repository:** https://github.com/ZeraTS/dnspy-mcp
 
-## Features
+## Quick Start
 
-- Decompile .NET binaries (DLL/EXE)
-- Detect and analyze obfuscation techniques (ConfuserEx, etc)
-- Extract specific classes by name
-- Set breakpoints for debugging
-- Batch processing support
-- VSCode project structure generation
-- Markdown report export
-- Worker pool for concurrent requests
-- Integrated CLI debugger for reflection
-
-## Installation
-
-### Docker (Recommended)
-
+### Docker
 ```bash
 docker-compose up
 ```
 
-The daemon will start on `127.0.0.1:9001`.
-
 ### Manual Setup
-
-**Quick Start:**
 ```bash
 chmod +x setup.sh
 ./setup.sh
 source venv/bin/activate
 export $(cat .env | xargs)
-python3 daemon_improved.py
+python3 daemon_production.py
 ```
 
-**Manual Install:**
+## Usage
+
+### CLI Tool
 ```bash
-pip install -r requirements.txt
-cp .env.example .env
-# Edit .env with your settings
-export $(cat .env | xargs)
-python3 daemon_improved.py  # Uses config.json + environment
+python3 cli.py decompile /path/to/app.dll
+python3 cli.py analyze /path/to/app.dll
+python3 cli.py extract /path/to/app.dll System.String
+python3 cli.py batch /path/to/*.dll
+python3 cli.py status
 ```
 
-Or use the basic daemon (minimal logging):
-```bash
-python3 daemon.py
-```
-
-## API
-
-All endpoints require `X-API-Key` header.
-
-### Decompile
-
+### REST API
 ```bash
 curl -X POST http://localhost:9001/api/decompile \
   -H "X-API-Key: your-key" \
@@ -71,386 +47,197 @@ curl -X POST http://localhost:9001/api/decompile \
   }'
 ```
 
-**Parameters:**
-- `binary_path` (required): Path to .NET binary
-- `output_format`: "vscode", "json", or "markdown"
-- `extract_classes`: List of class names to extract
-- `analyze_obfuscation`: Boolean to analyze obfuscation
-
-### Analyze Obfuscation
-
+### Check Health
 ```bash
-curl -X POST http://localhost:9001/api/analyze-obfuscation \
-  -H "X-API-Key: your-key" \
-  -H "Content-Type: application/json" \
-  -d '{"binary_path": "/path/to/app.dll"}'
+curl http://localhost:9001/health | jq
+curl http://localhost:9001/metrics  # Prometheus format
 ```
 
-Returns detected techniques: ConfuserEx, string encryption, native compilation, entropy analysis.
+## API Endpoints
 
-### Extract Class
-
-```bash
-curl -X POST http://localhost:9001/api/extract-class \
-  -H "X-API-Key: your-key" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "binary_path": "/path/to/app.dll",
-    "class_name": "MyNamespace.MyClass"
-  }'
-```
-
-### Set Breakpoint
-
-```bash
-curl -X POST http://localhost:9001/api/set-breakpoint \
-  -H "X-API-Key: your-key" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "binary_path": "/path/to/app.dll",
-    "type_name": "MyNamespace.MyClass",
-    "method_name": "MyMethod",
-    "il_offset": 0
-  }'
-```
-
-### Batch Dump
-
-```bash
-curl -X POST http://localhost:9001/api/batch-dump \
-  -H "X-API-Key: your-key" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "binaries": ["/path/to/app1.dll", "/path/to/app2.exe"],
-    "output_format": "vscode"
-  }'
-```
-
-### Health Check
-
-```bash
-curl http://localhost:9001/health
-```
-
-### Cleanup
-
-```bash
-curl -X POST http://localhost:9001/cleanup \
-  -H "X-API-Key: your-key"
-```
-
-## CLI Debugger
-
-Lightweight reflection engine for .NET assembly inspection (does not require dnspy):
-
-```bash
-dotnet dnspy-debugger.dll --binary app.dll --list-types
-dotnet dnspy-debugger.dll --binary app.dll --method Decrypt --json
-dotnet dnspy-debugger.dll --binary app.dll --inspect System.String --json
-```
-
-Useful for:
-- Quick metadata extraction
-- Method discovery
-- Type inspection
-- JSON export for automation
-
-## MCP Server
-
-Expose this daemon as an MCP server:
-
-```bash
-python3 mcp_server.py
-```
-
-The MCP server provides tool calls for:
-- `decompile` - Full binary decompilation
-- `analyze_obfuscation` - Detect obfuscation techniques
-- `extract_class` - Extract specific class
-- `set_breakpoint` - Create debug breakpoint
-- `batch_dump` - Process multiple binaries
-- `health_check` - Check daemon status
-- `cleanup_workers` - Clean up all workers
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/decompile` | Decompile binary |
+| POST | `/api/analyze-obfuscation` | Detect obfuscation |
+| POST | `/api/extract-class` | Extract class by name |
+| POST | `/api/set-breakpoint` | Create breakpoint |
+| POST | `/api/batch-dump` | Batch process binaries |
+| GET | `/health` | Health check & metrics |
+| GET | `/metrics` | Prometheus metrics |
+| POST | `/cleanup` | Clean up workers |
 
 ## Configuration
 
-Environment variables:
+Edit `.env` or `config.json`:
 
 ```bash
-DNSPY_DAEMON_PORT=9001              # Daemon port
-DNSPY_PATH=/opt/dnspy/dnSpy.exe    # Path to dnspy.exe
-DNSPY_API_KEY=your-secure-key      # API key for authentication
+DNSPY_DAEMON_PORT=9001
+DNSPY_HOST=127.0.0.1
+DNSPY_PATH=/opt/dnspy/dnSpy.exe
+DNSPY_API_KEY=secure-key
+DNSPY_WORKER_POOL_SIZE=5
+DNSPY_REQUEST_TIMEOUT=120
+```
+
+Features can be toggled in `config.json`:
+```json
+{
+  "features": {
+    "enable_caching": true,
+    "enable_rate_limiting": true,
+    "enable_metrics": true,
+    "enable_structured_logging": true,
+    "enable_webhooks": false
+  }
+}
+```
+
+## Deployment
+
+### Kubernetes
+```bash
+kubectl apply -f k8s-deployment.yaml
+kubectl port-forward svc/dnspy-mcp 9001:9001
+```
+
+### Systemd
+```bash
+./setup.sh
+sudo cp dnspy-mcp.service /etc/systemd/system/
+sudo systemctl start dnspy-mcp
 ```
 
 ## Architecture
 
-- **daemon.py** - REST API server with worker pool
-- **daemon_worker.py** - Individual worker processes
-- **mcp_server.py** - MCP protocol wrapper
-- **utils.py** - Utility functions
+**Daemons:**
+- `daemon.py` - Minimal (basic endpoints)
+- `daemon_improved.py` - With config support
+- `daemon_production.py` - Full features (caching, metrics, logging, webhooks)
 
-Each request spawns a worker that handles decompilation and cleanup.
+**Core Modules:**
+- `daemon_worker.py` - Worker process orchestration
+- `caching.py` - SHA256-based request caching with TTL
+- `ratelimit.py` - Token bucket rate limiting
+- `metrics.py` - Prometheus metrics collection
+- `structured_logging.py` - JSON logging with correlation IDs
+- `webhooks.py` - Async webhook delivery
+- `cli.py` - Command-line interface
 
-## Security
+**Utilities:**
+- `mcp_server.py` - MCP protocol wrapper
+- `utils.py` - Helper functions
 
-- API key authentication required (set strong key)
-- Localhost-only binding (127.0.0.1)
-- Workers run isolated processes
-- Automatic resource cleanup
+## CLI Debugger
 
-Change `DNSPY_API_KEY` before production use.
+Lightweight reflection tool (no dnspy dependency):
+```bash
+dotnet build -c Release
+dotnet bin/Release/net8.0/dnspy-mcp.dll --binary app.dll --list-types --json
+dotnet bin/Release/net8.0/dnspy-mcp.dll --binary app.dll --method Decrypt --json
+dotnet bin/Release/net8.0/dnspy-mcp.dll --binary app.dll --inspect System.String --json
+```
 
-## Known Issues & Workarounds
+## Known Issues
 
-<details>
-<summary><b>Obfuscation (ConfuserEx, CodeWall, etc)</b></summary>
+### Obfuscation (ConfuserEx, CodeWall, etc)
+**Problem:** Encrypted strings, renamed types, IL modification. Decompilation may fail or be incomplete.
 
-### Problem
-Obfuscated binaries have encrypted strings, renamed types, and IL code modification. Decompilation may fail or produce incomplete source.
+**Detection:** Entropy analysis (>6.5), "ConfuserEx"/"Confuser" string signatures, unusual method sizes.
 
-### Detection
-- Entropy analysis (> 6.5 indicates encryption)
-- Presence of "ConfuserEx" or "Confuser" strings in binary
-- Unusual method sizes or IL patterns
+**Workarounds:**
+1. Use Frida hooks to intercept string decryption at runtime
+2. Mono.Cecil IL disassembly (bypasses decompiler)
+3. Dynamic analysis on instrumented VM
+4. Manual breakpoint analysis for critical functions
 
-### Workaround
-1. Use string decryption hooks if available
-2. Frida runtime hooks to intercept decryption
-3. Manual string extraction via breakpoints
-4. Mono.Cecil IL disassembly (bypasses decompiler)
-5. Dynamic analysis on instrumented VM
+### Virtualized Code (.NET Native, RyuJIT)
+**Problem:** No IL code available. Binary compiled to native. dnspy cannot decompile.
 
-### Prevention
-- Don't rely solely on decompiler output
-- Cross-reference with dynamic analysis
-- Check for tamper detection in decompiled code
-- Use virtualization-aware tools
+**Detection:** `.xdata` and `.pdata` sections in PE, reduced IL section, large native code section.
 
-</details>
-
-<details>
-<summary><b>Virtualized Code (.NET Native, RyuJIT)</b></summary>
-
-### Problem
-Binaries compiled with .NET Native or aggressive JIT optimization lack IL code. dnspy cannot decompile to source.
-
-### Detection
-- `.xdata` and `.pdata` sections (native compilation markers)
-- Small IL section, large native code section
-- No managed metadata in sections
-
-### Workaround
+**Workarounds:**
 1. Use WinDbg or x64dbg for native disassembly
 2. Frida to hook virtualized methods at runtime
 3. Binary instrumentation (DynamoRIO, Pin)
 4. IL disassembly of remaining managed code
-5. Hex editor analysis of native code patterns
 
-### Prevention
-- Decompile pre-JIT binaries when possible
-- Use version control to track source (easier than RE)
-- Document critical algorithms
-- Test decompiler output against known sources
+### Anti-Tamper Detection
+**Problem:** Binary checks for modifications. May exit or disable features if tampering detected.
 
-</details>
+**Detection:** Hash verification in decompiled code, PE header checks, assembly signature validation.
 
-<details>
-<summary><b>Anti-Tamper Detection</b></summary>
-
-### Problem
-Binary checks for modifications (code integrity verification, hash checks). May exit or disable features if tampering detected.
-
-### Detection
-- Presence of hash verification in decompiled code
-- PE header integrity checks
-- Assembly signature validation
-- Hard-coded checksums in code
-
-### Workaround
+**Workarounds:**
 1. Patch decompiled code to skip verification
-2. Hook verification functions with Frida before they run
-3. Modify binary sections that are NOT checked
-4. Extract functionality without running modified binary
-5. Use original binary with instrumentation (non-destructive)
+2. Frida hooks to bypass before they run
+3. Modify non-checked binary sections only
+4. Instrument runtime rather than modifying binary
+5. Use original binary with non-destructive instrumentation
 
-### Prevention
-- Analyze anti-tamper code before modification
-- Instrument runtime rather than modifying binary
-- Use separate unsigned copy for analysis
-- Document verification logic
-- Mock external verification calls
+### Anti-Debug Mechanisms
+**Problem:** Detects debuggers and exits or changes behavior. IsDebuggerPresent, OutputDebugString traps, hardware breakpoint detection.
 
-</details>
+**Detection:** Search decompiled code for `Debugger.IsAttached`, `System.Diagnostics.Debugger`, debug environment variables.
 
-<details>
-<summary><b>Anti-Debug Mechanisms</b></summary>
-
-### Problem
-Binaries detect debuggers and exit or change behavior. Includes:
-- IsDebuggerPresent() checks
-- OutputDebugString() traps
-- Hardware breakpoint detection
-- PEB manipulation checks
-- Remote debugging detection
-
-### Detection
-- Search decompiled code for `Debugger.IsAttached`
-- Look for `System.Diagnostics.Debugger` namespace usage
-- Check Environment variables for debug flags
-- Detect exception-based anti-debug (catch SEH)
-
-### Workaround
+**Workarounds:**
 1. Patch anti-debug calls before running
 2. Run on non-debug CLR (release build)
 3. Frida hooks to fake `IsAttached` = false
-4. Use kernel-mode debugger (WinDbg) to bypass user-mode checks
-5. Staticanalyze without executing
-6. Use dnspy for static decompilation only
+4. Kernel-mode debugger (WinDbg) to bypass user-mode checks
+5. Static analysis without execution
 
-### Prevention
-- Don't rely on debugger detection for security
-- Use encryption + signature for sensitive code
-- Separate anti-debug from main logic
-- Make anti-debug checks expensive to bypass
-- Log bypass attempts
+### Runtime Integrity Checks
+**Problem:** Code verifies its own integrity at runtime. May throw or disable features.
 
-</details>
+**Detection:** `ComputeHash()`, `GetHash()` calls, `.cctor` (static constructor) checks, nested type verification.
 
-<details>
-<summary><b>Runtime Verification & Integrity Checks</b></summary>
-
-### Problem
-Code checks its own integrity at runtime, verifying IL hasn't changed. May throw exceptions or disable features.
-
-### Detection
-- Presence of `ComputeHash()` or `GetHash()` calls
-- `.cctor` (static constructor) integrity checks
-- Nested type verification
-- Resource integrity validation
-
-### Workaround
+**Workarounds:**
 1. Extract pure algorithms before integrity check runs
 2. Bypass check in decompiled version
-3. Disable checks via Frida hooks
-4. Replace checked IL with unchecked version
-5. Use static analysis only (don't execute modified code)
+3. Frida hooks to disable checks
+4. Static analysis only (don't execute modified code)
+5. Replace checked IL with unchecked version
 
-### Prevention
-- Don't check code at runtime for security
-- Use cryptographic signing instead
-- Distribute signed/sealed code (AppContainer)
-- Document expected hashes separately
-- Make integrity checks non-fatal
+### Process Isolation (AppContainer, Sandbox, VM)
+**Problem:** Binary runs in protected environment. Cannot access resources or inject code.
 
-</details>
-
-<details>
-<summary><b>Virtualization & Process Isolation</b></summary>
-
-### Problem
-Binaries run in protected environments (AppContainer, sandbox, VM). Cannot access resources or inject code.
-
-### Workaround
-1. Run in matching environment (Docker container, VM)
+**Workarounds:**
+1. Run in matching environment (Docker, VM)
 2. Extract metadata without modification
 3. Use static decompilation only
 4. Cooperate with isolation mechanism (signed code)
-5. Document expected behavior from outside environment
+5. Document expected behavior from outside
 
-### Prevention
-- Use container for legitimate testing
-- Document isolation requirements
-- Provide analysis tools inside environment
-- Allow safe analysis modes
-- Log analysis attempts for monitoring
+### Native C++ Mixed Assemblies
+**Problem:** .NET binaries with embedded C++ (P/Invoke, C++/CLI). C++ cannot be decompiled by dnspy.
 
-</details>
-
-<details>
-<summary><b>Native C++ Mixed Assemblies</b></summary>
-
-### Problem
-.NET binaries with embedded C++ (P/Invoke, C++/CLI) cannot be fully decompiled. C++ portions require separate RE tools.
-
-### Workaround
+**Workarounds:**
 1. Use IDA Pro or Ghidra for native code
 2. Extract IL-only methods via dnspy
-3. Use Frida to hook native functions
+3. Frida to hook native functions
 4. Binary instrumentation for native code
 5. Combine IL analysis + native disassembly
 
-### Prevention
-- Minimize native code in managed assemblies
-- Document native API contracts
-- Use P/Invoke stubs for interface
-- Keep native and managed concerns separate
-- Provide C++ headers or symbols when safe
-
-</details>
-
-## Improvements & Roadmap
-
-See [IMPROVEMENTS.md](IMPROVEMENTS.md) for:
-- Configuration management
-- Enhanced health checks
-- Request logging & tracing
-- CLI wrapper tool
-- Caching & rate limiting
-- Webhook notifications
-- Web dashboard
-- Performance optimization
-
-Currently implemented:
-- ✅ Config file support (JSON)
-- ✅ Enhanced health endpoint (metrics, uptime, success rate)
-- ✅ Request tracing with worker IDs
-- ✅ Automated setup script
-- ✅ Environment template (.env.example)
-
-Planned:
-- CLI wrapper (`dnspy-mcp decompile ...`)
-- Request caching layer
-- Rate limiting per API key
-- Prometheus metrics endpoint
-- Kubernetes deployment templates
-
-## Testing
+## Build
 
 ```bash
-make build
-make test
+make build        # Install dependencies
+make run-prod     # Run production daemon
+make test         # Test API
+make test-modules # Run unit tests
+make cli          # Show CLI help
 ```
 
-Or manually:
+## Requirements
 
-```bash
-chmod +x test_api.sh
-./test_api.sh
-```
-
-Check health with metrics:
-```bash
-curl http://localhost:9001/health | jq
-```
-
-## Development
-
-For enhanced daemon features:
-```bash
-python3 daemon_improved.py
-```
-
-Features:
-- Configuration file support
-- Detailed health metrics
-- Request statistics
-- Worker pool monitoring
+- Python 3.10+
+- .NET SDK 8.0+ (for CLI debugger)
+- dnspy.exe (for decompilation)
 
 ## License
 
-MIT - See [LICENSE](LICENSE) for details.
+MIT
 
 ## Support
 
-- GitHub Issues: [Report bugs](https://github.com/ZeraTS/dnspy-mcp/issues)
-- Discussions: [Ask questions](https://github.com/ZeraTS/dnspy-mcp/discussions)
+- Issues: https://github.com/ZeraTS/dnspy-mcp/issues
+- Discussions: https://github.com/ZeraTS/dnspy-mcp/discussions
