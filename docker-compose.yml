@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  dnspy-mcp:
+    build: .
+    ports:
+      - "9001:9001"
+    environment:
+      DNSPY_DAEMON_PORT: 9001
+      DNSPY_PATH: /opt/dnspy/dnSpy.exe
+      DNSPY_API_KEY: ${DNSPY_API_KEY:-default-insecure-key-change-me}
+    volumes:
+      - dnspy-cache:/root/.dnspy-worker
+    networks:
+      - dnspy-network
+
+networks:
+  dnspy-network:
+    driver: bridge
+
+volumes:
+  dnspy-cache:
