@@ -1,6 +1,11 @@
 # dnspy-mcp
 
+[![GitHub License](https://img.shields.io/github/license/ZeraTS/dnspy-mcp?style=flat-square)](LICENSE)
+[![GitHub Release](https://img.shields.io/github/release/ZeraTS/dnspy-mcp?style=flat-square)](https://github.com/ZeraTS/dnspy-mcp/releases)
+
 MCP server for .NET binary decompilation and analysis via dnspy. Includes integrated CLI debugger for lightweight reflection and metadata extraction.
+
+**Repository:** https://github.com/ZeraTS/dnspy-mcp
 
 ## Features
 
@@ -26,10 +31,26 @@ The daemon will start on `127.0.0.1:9001`.
 
 ### Manual Setup
 
+**Quick Start:**
+```bash
+chmod +x setup.sh
+./setup.sh
+source venv/bin/activate
+export $(cat .env | xargs)
+python3 daemon_improved.py
+```
+
+**Manual Install:**
 ```bash
 pip install -r requirements.txt
-export DNSPY_PATH=/opt/dnspy/dnSpy.exe
-export DNSPY_API_KEY=your-secure-key
+cp .env.example .env
+# Edit .env with your settings
+export $(cat .env | xargs)
+python3 daemon_improved.py  # Uses config.json + environment
+```
+
+Or use the basic daemon (minimal logging):
+```bash
 python3 daemon.py
 ```
 
@@ -367,6 +388,32 @@ Binaries run in protected environments (AppContainer, sandbox, VM). Cannot acces
 
 </details>
 
+## Improvements & Roadmap
+
+See [IMPROVEMENTS.md](IMPROVEMENTS.md) for:
+- Configuration management
+- Enhanced health checks
+- Request logging & tracing
+- CLI wrapper tool
+- Caching & rate limiting
+- Webhook notifications
+- Web dashboard
+- Performance optimization
+
+Currently implemented:
+- ✅ Config file support (JSON)
+- ✅ Enhanced health endpoint (metrics, uptime, success rate)
+- ✅ Request tracing with worker IDs
+- ✅ Automated setup script
+- ✅ Environment template (.env.example)
+
+Planned:
+- CLI wrapper (`dnspy-mcp decompile ...`)
+- Request caching layer
+- Rate limiting per API key
+- Prometheus metrics endpoint
+- Kubernetes deployment templates
+
 ## Testing
 
 ```bash
@@ -381,6 +428,29 @@ chmod +x test_api.sh
 ./test_api.sh
 ```
 
+Check health with metrics:
+```bash
+curl http://localhost:9001/health | jq
+```
+
+## Development
+
+For enhanced daemon features:
+```bash
+python3 daemon_improved.py
+```
+
+Features:
+- Configuration file support
+- Detailed health metrics
+- Request statistics
+- Worker pool monitoring
+
 ## License
 
-MIT
+MIT - See [LICENSE](LICENSE) for details.
+
+## Support
+
+- GitHub Issues: [Report bugs](https://github.com/ZeraTS/dnspy-mcp/issues)
+- Discussions: [Ask questions](https://github.com/ZeraTS/dnspy-mcp/discussions)
