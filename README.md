@@ -21,7 +21,7 @@ chmod +x tools/setup.sh
 ./tools/setup.sh
 source venv/bin/activate
 export $(cat config/.env | xargs)
-python3 -m src.core.daemon_production
+python3 -m src.core.daemon
 ```
 
 ## Usage
@@ -112,8 +112,6 @@ dnspy-mcp/
 ├── src/
 │   ├── core/              # Daemon and worker
 │   │   ├── daemon.py
-│   │   ├── daemon_improved.py
-│   │   ├── daemon_production.py
 │   │   ├── daemon_worker.py
 │   │   └── mcp_server.py
 │   ├── features/          # Optional features
@@ -161,7 +159,7 @@ dotnet bin/Release/net8.0/dnspy-mcp.dll --binary app.dll --method Decrypt --json
 
 ```bash
 make build         # Install dependencies
-make run-prod      # Run production daemon
+make run           # Run daemon (full features)
 make test          # Test API
 make test-modules  # Run unit tests
 ```

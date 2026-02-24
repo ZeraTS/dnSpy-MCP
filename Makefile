@@ -19,9 +19,6 @@ build:
 run:
 	python3 -m src.core.daemon
 
-run-prod:
-	python3 -m src.core.daemon_production
-
 test:
 	bash tools/test_api.sh
 
