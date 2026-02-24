@@ -17,22 +17,22 @@ docker-compose up
 
 ### Manual Setup
 ```bash
-chmod +x setup.sh
-./setup.sh
+chmod +x tools/setup.sh
+./tools/setup.sh
 source venv/bin/activate
-export $(cat .env | xargs)
-python3 daemon_production.py
+export $(cat config/.env | xargs)
+python3 -m src.core.daemon_production
 ```
 
 ## Usage
 
 ### CLI Tool
 ```bash
-python3 cli.py decompile /path/to/app.dll
-python3 cli.py analyze /path/to/app.dll
-python3 cli.py extract /path/to/app.dll System.String
-python3 cli.py batch /path/to/*.dll
-python3 cli.py status
+python3 -m src.cli.cli decompile /path/to/app.dll
+python3 -m src.cli.cli analyze /path/to/app.dll
+python3 -m src.cli.cli extract /path/to/app.dll System.String
+python3 -m src.cli.cli batch /path/to/*.dll
+python3 -m src.cli.cli status
 ```
 
 ### REST API
@@ -68,7 +68,7 @@ curl http://localhost:9001/metrics  # Prometheus format
 
 ## Configuration
 
-Edit `.env` or `config.json`:
+Edit `config/.env` or `config/config.json`:
 
 ```bash
 DNSPY_DAEMON_PORT=9001
@@ -79,7 +79,7 @@ DNSPY_WORKER_POOL_SIZE=5
 DNSPY_REQUEST_TIMEOUT=120
 ```
 
-Features can be toggled in `config.json`:
+Features can be toggled in `config/config.json`:
 ```json
 {
   "features": {
@@ -96,136 +96,176 @@ Features can be toggled in `config.json`:
 
 ### Kubernetes
 ```bash
-kubectl apply -f k8s-deployment.yaml
+kubectl apply -f deploy/k8s-deployment.yaml
 kubectl port-forward svc/dnspy-mcp 9001:9001
 ```
 
-### Systemd
+### Docker Compose
 ```bash
-./setup.sh
-sudo cp dnspy-mcp.service /etc/systemd/system/
-sudo systemctl start dnspy-mcp
+docker-compose -f deploy/docker-compose.yml up
 ```
 
-## Architecture
+## Project Structure
 
-**Daemons:**
-- `daemon.py` - Minimal (basic endpoints)
-- `daemon_improved.py` - With config support
-- `daemon_production.py` - Full features (caching, metrics, logging, webhooks)
-
-**Core Modules:**
-- `daemon_worker.py` - Worker process orchestration
-- `caching.py` - SHA256-based request caching with TTL
-- `ratelimit.py` - Token bucket rate limiting
-- `metrics.py` - Prometheus metrics collection
-- `structured_logging.py` - JSON logging with correlation IDs
-- `webhooks.py` - Async webhook delivery
-- `cli.py` - Command-line interface
-
-**Utilities:**
-- `mcp_server.py` - MCP protocol wrapper
-- `utils.py` - Helper functions
+```
+dnspy-mcp/
+├── src/
+│   ├── core/              # Daemon and worker
+│   │   ├── daemon.py
+│   │   ├── daemon_improved.py
+│   │   ├── daemon_production.py
+│   │   ├── daemon_worker.py
+│   │   └── mcp_server.py
+│   ├── features/          # Optional features
+│   │   ├── caching.py
+│   │   ├── ratelimit.py
+│   │   ├── metrics.py
+│   │   └── webhooks.py
+│   ├── utils/             # Utilities
+│   │   ├── structured_logging.py
+│   │   └── utils.py
+│   └── cli/               # Command-line tool
+│       └── cli.py
+├── cli-debugger/          # C# .NET CLI tool
+│   ├── src/
+│   │   ├── AutomatedDebugger/
+│   │   └── CLI/
+│   └── dnspy-mcp.csproj
+├── deploy/                # Deployment configs
+│   ├── k8s-deployment.yaml
+│   ├── docker-compose.yml
+│   └── Dockerfile
+├── config/                # Configuration
+│   ├── config.json
+│   └── .env.example
+├── tools/                 # Scripts
+│   ├── setup.sh
+│   └── test_api.sh
+├── tests/                 # Tests
+│   └── test_modules.py
+├── requirements.txt
+└── README.md
+```
 
 ## CLI Debugger
 
 Lightweight reflection tool (no dnspy dependency):
 ```bash
+cd cli-debugger
 dotnet build -c Release
 dotnet bin/Release/net8.0/dnspy-mcp.dll --binary app.dll --list-types --json
 dotnet bin/Release/net8.0/dnspy-mcp.dll --binary app.dll --method Decrypt --json
-dotnet bin/Release/net8.0/dnspy-mcp.dll --binary app.dll --inspect System.String --json
+```
+
+## Build & Test
+
+```bash
+make build         # Install dependencies
+make run-prod      # Run production daemon
+make test          # Test API
+make test-modules  # Run unit tests
 ```
 
 ## Known Issues
 
-### Obfuscation (ConfuserEx, CodeWall, etc)
+<details>
+<summary><b>Obfuscation (ConfuserEx, CodeWall, etc)</b></summary>
+
 **Problem:** Encrypted strings, renamed types, IL modification. Decompilation may fail or be incomplete.
 
 **Detection:** Entropy analysis (>6.5), "ConfuserEx"/"Confuser" string signatures, unusual method sizes.
 
 **Workarounds:**
-1. Use Frida hooks to intercept string decryption at runtime
-2. Mono.Cecil IL disassembly (bypasses decompiler)
-3. Dynamic analysis on instrumented VM
-4. Manual breakpoint analysis for critical functions
+- Frida hooks to intercept string decryption at runtime
+- Mono.Cecil IL disassembly (bypasses decompiler)
+- Dynamic analysis on instrumented VM
+- Manual breakpoint analysis for critical functions
+</details>
 
-### Virtualized Code (.NET Native, RyuJIT)
+<details>
+<summary><b>Virtualized Code (.NET Native, RyuJIT)</b></summary>
+
 **Problem:** No IL code available. Binary compiled to native. dnspy cannot decompile.
 
 **Detection:** `.xdata` and `.pdata` sections in PE, reduced IL section, large native code section.
 
 **Workarounds:**
-1. Use WinDbg or x64dbg for native disassembly
-2. Frida to hook virtualized methods at runtime
-3. Binary instrumentation (DynamoRIO, Pin)
-4. IL disassembly of remaining managed code
+- WinDbg or x64dbg for native disassembly
+- Frida to hook virtualized methods at runtime
+- Binary instrumentation (DynamoRIO, Pin)
+- IL disassembly of remaining managed code
+</details>
 
-### Anti-Tamper Detection
+<details>
+<summary><b>Anti-Tamper Detection</b></summary>
+
 **Problem:** Binary checks for modifications. May exit or disable features if tampering detected.
 
 **Detection:** Hash verification in decompiled code, PE header checks, assembly signature validation.
 
 **Workarounds:**
-1. Patch decompiled code to skip verification
-2. Frida hooks to bypass before they run
-3. Modify non-checked binary sections only
-4. Instrument runtime rather than modifying binary
-5. Use original binary with non-destructive instrumentation
+- Patch decompiled code to skip verification
+- Frida hooks to bypass before they run
+- Modify non-checked binary sections only
+- Instrument runtime rather than modifying binary
+- Use original binary with non-destructive instrumentation
+</details>
 
-### Anti-Debug Mechanisms
+<details>
+<summary><b>Anti-Debug Mechanisms</b></summary>
+
 **Problem:** Detects debuggers and exits or changes behavior. IsDebuggerPresent, OutputDebugString traps, hardware breakpoint detection.
 
 **Detection:** Search decompiled code for `Debugger.IsAttached`, `System.Diagnostics.Debugger`, debug environment variables.
 
 **Workarounds:**
-1. Patch anti-debug calls before running
-2. Run on non-debug CLR (release build)
-3. Frida hooks to fake `IsAttached` = false
-4. Kernel-mode debugger (WinDbg) to bypass user-mode checks
-5. Static analysis without execution
+- Patch anti-debug calls before running
+- Run on non-debug CLR (release build)
+- Frida hooks to fake `IsAttached` = false
+- Kernel-mode debugger (WinDbg) to bypass user-mode checks
+- Static analysis without execution
+</details>
 
-### Runtime Integrity Checks
+<details>
+<summary><b>Runtime Integrity Checks</b></summary>
+
 **Problem:** Code verifies its own integrity at runtime. May throw or disable features.
 
 **Detection:** `ComputeHash()`, `GetHash()` calls, `.cctor` (static constructor) checks, nested type verification.
 
 **Workarounds:**
-1. Extract pure algorithms before integrity check runs
-2. Bypass check in decompiled version
-3. Frida hooks to disable checks
-4. Static analysis only (don't execute modified code)
-5. Replace checked IL with unchecked version
+- Extract pure algorithms before integrity check runs
+- Bypass check in decompiled version
+- Frida hooks to disable checks
+- Static analysis only (don't execute modified code)
+- Replace checked IL with unchecked version
+</details>
 
-### Process Isolation (AppContainer, Sandbox, VM)
+<details>
+<summary><b>Process Isolation (AppContainer, Sandbox, VM)</b></summary>
+
 **Problem:** Binary runs in protected environment. Cannot access resources or inject code.
 
 **Workarounds:**
-1. Run in matching environment (Docker, VM)
-2. Extract metadata without modification
-3. Use static decompilation only
-4. Cooperate with isolation mechanism (signed code)
-5. Document expected behavior from outside
+- Run in matching environment (Docker, VM)
+- Extract metadata without modification
+- Use static decompilation only
+- Cooperate with isolation mechanism (signed code)
+- Document expected behavior from outside
+</details>
 
-### Native C++ Mixed Assemblies
+<details>
+<summary><b>Native C++ Mixed Assemblies</b></summary>
+
 **Problem:** .NET binaries with embedded C++ (P/Invoke, C++/CLI). C++ cannot be decompiled by dnspy.
 
 **Workarounds:**
-1. Use IDA Pro or Ghidra for native code
-2. Extract IL-only methods via dnspy
-3. Frida to hook native functions
-4. Binary instrumentation for native code
-5. Combine IL analysis + native disassembly
-
-## Build
-
-```bash
-make build        # Install dependencies
-make run-prod     # Run production daemon
-make test         # Test API
-make test-modules # Run unit tests
-make cli          # Show CLI help
-```
+- IDA Pro or Ghidra for native code
+- Extract IL-only methods via dnspy
+- Frida to hook native functions
+- Binary instrumentation for native code
+- Combine IL analysis + native disassembly
+</details>
 
 ## Requirements
 

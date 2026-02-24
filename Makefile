@@ -17,19 +17,19 @@ build:
 	pip install -r requirements.txt
 
 run:
-	python3 daemon.py
+	python3 -m src.core.daemon
 
 run-prod:
-	python3 daemon_production.py
+	python3 -m src.core.daemon_production
 
 test:
-	bash test_api.sh
+	bash tools/test_api.sh
 
 test-modules:
-	python3 test_modules.py
+	python3 -m pytest tests/ || python3 tests/test_modules.py
 
 cli:
-	python3 cli.py --help
+	python3 -m src.cli.cli --help
 
 docker-build:
 	docker build -t dnspy-mcp:latest .

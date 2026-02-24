@@ -13,12 +13,12 @@ import hashlib
 from aiohttp import web
 from pydantic import BaseModel, ValidationError
 
-from daemon_worker import DnsyWorker
-from caching import CacheManager
-from ratelimit import RateLimiter
-from structured_logging import StructuredLogger
-from metrics import MetricsCollector
-from webhooks import WebhookManager, WebhookEventTypes
+from src.core.daemon_worker import DnsyWorker
+from src.features.caching import CacheManager
+from src.features.ratelimit import RateLimiter
+from src.utils.structured_logging import StructuredLogger
+from src.features.metrics import MetricsCollector
+from src.features.webhooks import WebhookManager, WebhookEventTypes
 
 
 class Config:

@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+
 import click
 import requests
 import json
-import sys
 from pathlib import Path
 from typing import Optional
 from urllib.parse import urljoin

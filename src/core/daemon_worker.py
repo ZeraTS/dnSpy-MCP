@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional
 from collections import Counter
 import math
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("dnspy-mcp.worker")
 
 
 class DnsyWorker:
