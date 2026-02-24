@@ -1,0 +1,191 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dnspy-mcp
+  namespace: default
+  labels:
+    app: dnspy-mcp
+    version: v1
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: dnspy-mcp
+  template:
+    metadata:
+      labels:
+        app: dnspy-mcp
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9001"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: dnspy-mcp
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+      containers:
+      - name: dnspy-mcp
+        image: dnspy-mcp:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: http
+          containerPort: 9001
+          protocol: TCP
+        env:
+        - name: DNSPY_DAEMON_PORT
+          value: "9001"
+        - name: DNSPY_HOST
+          value: "0.0.0.0"
+        - name: DNSPY_PATH
+          value: "/opt/dnspy/dnSpy.exe"
+        - name: DNSPY_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: dnspy-mcp-secret
+              key: api-key
+        - name: DNSPY_WORKER_POOL_SIZE
+          value: "5"
+        - name: DNSPY_REQUEST_TIMEOUT
+          value: "120"
+        - name: DNSPY_LOG_LEVEL
+          value: "INFO"
+        resources:
+          requests:
+            cpu: 500m
+            memory: 512Mi
+          limits:
+            cpu: 2000m
+            memory: 2Gi
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 2
+        volumeMounts:
+        - name: cache
+          mountPath: /root/.dnspy-cache
+        - name: config
+          mountPath: /etc/dnspy-mcp
+          readOnly: true
+      volumes:
+      - name: cache
+        emptyDir:
+          sizeLimit: 5Gi
+      - name: config
+        configMap:
+          name: dnspy-mcp-config
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dnspy-mcp
+  namespace: default
+  labels:
+    app: dnspy-mcp
+spec:
+  type: ClusterIP
+  selector:
+    app: dnspy-mcp
+  ports:
+  - name: http
+    port: 9001
+    targetPort: http
+    protocol: TCP
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: dnspy-mcp
+  namespace: default
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: dnspy-mcp-secret
+  namespace: default
+type: Opaque
+stringData:
+  api-key: "change-me-secure-key"
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dnspy-mcp-config
+  namespace: default
+data:
+  config.json: |
+    {
+      "daemon": {
+        "port": 9001,
+        "host": "0.0.0.0",
+        "worker_pool_size": 5,
+        "request_timeout_seconds": 120,
+        "api_key": "change-me"
+      },
+      "features": {
+        "enable_caching": true,
+        "enable_rate_limiting": true,
+        "enable_metrics": true,
+        "enable_structured_logging": true
+      }
+    }
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: dnspy-mcp-pdb
+  namespace: default
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: dnspy-mcp
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: dnspy-mcp-hpa
+  namespace: default
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: dnspy-mcp
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
