@@ -1,11 +1,11 @@
 {
   "daemon": {
     "port": 9001,
-    "host": "127.0.0.1",
+    "host": "0.0.0.0",
     "worker_pool_size": 5,
     "request_timeout_seconds": 120,
     "max_binary_size_mb": 1024,
-    "api_key": "default-insecure-key-change-me"
+    "api_key": "B_Yvw2S-PghhmdhdQVSoNFgZfgAwKTHrs61YZ-2j4ec"
   },
   "dnspy": {
     "path": "/opt/dnspy/dnSpy.exe",
@@ -19,6 +19,11 @@
     "enable_obfuscation_analysis": true,
     "enable_batch_processing": true,
     "enable_cache": true,
-    "cache_ttl_seconds": 3600
+    "cache_ttl_seconds": 3600,
+    "enable_caching": true,
+    "enable_rate_limiting": true,
+    "enable_metrics": true,
+    "enable_structured_logging": true,
+    "enable_webhooks": false
   }
 }

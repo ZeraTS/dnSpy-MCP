@@ -1,0 +1,15 @@
+/root/.openclaw/workspace/dnspy-mcp/cli-debugger/bin/Release/net8.0/dnspy-mcp
+/root/.openclaw/workspace/dnspy-mcp/cli-debugger/bin/Release/net8.0/dnspy-mcp.deps.json
+/root/.openclaw/workspace/dnspy-mcp/cli-debugger/bin/Release/net8.0/dnspy-mcp.runtimeconfig.json
+/root/.openclaw/workspace/dnspy-mcp/cli-debugger/bin/Release/net8.0/dnspy-mcp.dll
+/root/.openclaw/workspace/dnspy-mcp/cli-debugger/bin/Release/net8.0/dnspy-mcp.pdb
+/root/.openclaw/workspace/dnspy-mcp/cli-debugger/obj/Release/net8.0/dnspy-mcp.GeneratedMSBuildEditorConfig.editorconfig
+/root/.openclaw/workspace/dnspy-mcp/cli-debugger/obj/Release/net8.0/dnspy-mcp.AssemblyInfoInputs.cache
+/root/.openclaw/workspace/dnspy-mcp/cli-debugger/obj/Release/net8.0/dnspy-mcp.AssemblyInfo.cs
+/root/.openclaw/workspace/dnspy-mcp/cli-debugger/obj/Release/net8.0/dnspy-mcp.csproj.CoreCompileInputs.cache
+/root/.openclaw/workspace/dnspy-mcp/cli-debugger/obj/Release/net8.0/dnspy-mcp.sourcelink.json
+/root/.openclaw/workspace/dnspy-mcp/cli-debugger/obj/Release/net8.0/dnspy-mcp.dll
+/root/.openclaw/workspace/dnspy-mcp/cli-debugger/obj/Release/net8.0/refint/dnspy-mcp.dll
+/root/.openclaw/workspace/dnspy-mcp/cli-debugger/obj/Release/net8.0/dnspy-mcp.pdb
+/root/.openclaw/workspace/dnspy-mcp/cli-debugger/obj/Release/net8.0/dnspy-mcp.genruntimeconfig.cache
+/root/.openclaw/workspace/dnspy-mcp/cli-debugger/obj/Release/net8.0/ref/dnspy-mcp.dll

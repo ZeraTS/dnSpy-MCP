@@ -1,356 +1,455 @@
 #!/usr/bin/env python3
+"""
+dnspy-mcp Worker
+
+Calls the C# CLI tool (dnspy-mcp.dll / ICSharpCode.Decompiler) as a subprocess
+and returns structured JSON results. Never executes the target assembly — 
+all analysis is static.
+"""
 import asyncio
 import json
 import logging
+import math
+import os
 import shutil
-import subprocess
+from collections import Counter
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-from collections import Counter
-import math
 
 logger = logging.getLogger("dnspy-mcp.worker")
 
+# ─── CLI tool paths ───────────────────────────────────────────────────────────
+
+# Path to the built dnspy-mcp.dll (C# CLI tool)
+# Can be overridden with DNSPY_CLI_PATH env var
+DEFAULT_CLI_SEARCH = [
+    "/opt/dnspy-mcp/cli-debugger/bin/Release/net8.0/dnspy-mcp.dll",
+    "/opt/dnspy-mcp/cli-debugger/bin/Debug/net8.0/dnspy-mcp.dll",
+    str(Path.home() / ".dnspy-mcp/cli/dnspy-mcp.dll"),
+]
+
+CLI_PATH = os.getenv("DNSPY_CLI_PATH") or next(
+    (p for p in DEFAULT_CLI_SEARCH if Path(p).exists()), None
+)
+
+DOTNET_CMD = os.getenv("DOTNET_PATH", "dotnet")
+CLI_TIMEOUT = int(os.getenv("DNSPY_CLI_TIMEOUT", "60"))
+
+
+async def _run_cli(args: List[str], timeout: int = CLI_TIMEOUT) -> Dict[str, Any]:
+    """
+    Invoke the C# CLI tool via dotnet and capture JSON output.
+    Returns parsed JSON dict or an error dict.
+    """
+    if not CLI_PATH:
+        return {"error": "CLI tool not built. Run: cd cli-debugger && dotnet build -c Release"}
+
+    cmd = [DOTNET_CMD, CLI_PATH, "--json"] + args
+    logger.debug(f"CLI exec: {' '.join(cmd[:4])} ...")
+
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+
+        try:
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(), timeout=timeout
+            )
+        except asyncio.TimeoutError:
+            proc.kill()
+            await proc.wait()
+            return {"error": f"CLI timed out after {timeout}s"}
+
+        stdout_str = stdout.decode("utf-8", errors="replace").strip()
+        stderr_str = stderr.decode("utf-8", errors="replace").strip()
+
+        if proc.returncode not in (0, None):
+            return {
+                "error": f"CLI exited with code {proc.returncode}",
+                "stderr": stderr_str[:500],
+            }
+
+        if not stdout_str:
+            return {"error": "CLI produced no output", "stderr": stderr_str[:500]}
+
+        try:
+            return json.loads(stdout_str)
+        except json.JSONDecodeError:
+            # CLI returned raw text (e.g. for --decompile); wrap it
+            return {"content": stdout_str}
+
+    except FileNotFoundError:
+        return {"error": f"dotnet not found. Install .NET SDK 8+ (tried: {DOTNET_CMD})"}
+    except Exception as e:
+        logger.error(f"CLI error: {e}")
+        return {"error": str(e)}
+
+
+# ─── Worker class ─────────────────────────────────────────────────────────────
 
 class DnsyWorker:
     def __init__(
         self,
         worker_id: str,
-        dnspy_path: str,
+        dnspy_path: str,           # kept for backward compat; not used (we use CLI)
         binary_path: str,
-        temp_dir: Path
+        temp_dir: Path,
     ):
         self.worker_id = worker_id
-        self.dnspy_path = dnspy_path
         self.binary_path = Path(binary_path)
         self.work_dir = temp_dir / worker_id
-        
+        self.process: Optional[asyncio.subprocess.Process] = None
+
         try:
             self.work_dir.mkdir(parents=True, exist_ok=True)
         except (PermissionError, OSError) as e:
-            logger.warning(f"Failed to create work_dir: {e}")
-            fallback_dir = Path.home() / ".dnspy-worker" / worker_id
-            fallback_dir.mkdir(parents=True, exist_ok=True)
-            self.work_dir = fallback_dir
-        
-        self.process: Optional[asyncio.subprocess.Process] = None
-    
+            logger.warning(f"Worker {worker_id}: work_dir fallback ({e})")
+            fallback = Path.home() / ".dnspy-worker" / worker_id
+            fallback.mkdir(parents=True, exist_ok=True)
+            self.work_dir = fallback
+
     async def cleanup(self):
         if self.process:
             try:
-                if not self.process.returncode:
+                if self.process.returncode is None:
                     self.process.terminate()
                     try:
                         await asyncio.wait_for(self.process.wait(), timeout=5)
                     except asyncio.TimeoutError:
-                        logger.warning(f"Process did not terminate, killing {self.process.pid}")
                         self.process.kill()
-                        try:
-                            await asyncio.wait_for(self.process.wait(), timeout=2)
-                        except asyncio.TimeoutError:
-                            logger.error(f"Failed to kill process {self.process.pid}")
-            except ProcessLookupError:
-                pass
-            except Exception as e:
+                        await asyncio.wait_for(self.process.wait(), timeout=2)
+            except (ProcessLookupError, Exception) as e:
                 logger.warning(f"Cleanup error: {e}")
-        
         try:
             shutil.rmtree(self.work_dir, ignore_errors=True)
-        except Exception as e:
-            logger.warning(f"Failed to cleanup work_dir: {e}")
-    
-    async def _run_dnspy_command(self, args: List[str]) -> Dict[str, Any]:
-        cmd = [self.dnspy_path] + args
-        
-        try:
-            logger.debug(f"Running dnspy command")
-            
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                timeout=60
-            )
-            
-            try:
-                stdout, stderr = await asyncio.wait_for(
-                    process.communicate(),
-                    timeout=60
-                )
-            except asyncio.TimeoutError:
-                logger.warning(f"Command timeout, terminating process {process.pid}")
-                try:
-                    process.terminate()
-                    await asyncio.wait_for(process.wait(), timeout=3)
-                except:
-                    process.kill()
-                raise TimeoutError("Command timed out")
-            
-            if process.returncode != 0:
-                error_msg = stderr.decode('utf-8', errors='ignore')
-                return {
-                    "returncode": process.returncode,
-                    "error": error_msg[:300],
-                    "stderr": error_msg
-                }
-            
-            return {
-                "returncode": process.returncode,
-                "stdout": stdout.decode('utf-8', errors='ignore'),
-                "stderr": stderr.decode('utf-8', errors='ignore')
-            }
-        
-        except asyncio.TimeoutError:
-            logger.error("Command timeout")
-            raise
-        except Exception as e:
-            logger.error(f"Command error: {e}")
-            raise
-    
+        except Exception:
+            pass
+
+    # ─── Core decompilation ───────────────────────────────────────────────────
+
     async def decompile(
         self,
-        output_format: str = "vscode",
+        output_format: str = "json",
         extract_classes: Optional[List[str]] = None,
-        analyze_obfuscation: bool = False
+        analyze_obfuscation: bool = False,
     ) -> Dict[str, Any]:
-        logger.info(f"Decompiling {self.binary_path}")
-        
-        output_dir = self.work_dir / "output"
-        output_dir.mkdir(exist_ok=True)
-        
-        result = {
+        """
+        Decompile an assembly. Returns structured JSON with metadata + optionally
+        extracted classes and obfuscation analysis.
+        """
+        logger.info(f"Worker {self.worker_id}: decompile {self.binary_path.name}")
+
+        result: Dict[str, Any] = {
             "status": "success",
-            "format": output_format,
             "binary": str(self.binary_path),
-            "output_path": str(output_dir)
+            "format": output_format,
         }
-        
-        try:
-            metadata = await self._extract_metadata()
-            result["metadata"] = metadata
-        except Exception as e:
-            logger.warning(f"Metadata extraction failed: {e}")
-            result["metadata"] = {}
-        
-        if analyze_obfuscation:
-            try:
-                obf_analysis = await self.analyze_obfuscation()
-                result["obfuscation_analysis"] = obf_analysis
-            except Exception as e:
-                logger.warning(f"Obfuscation analysis failed: {e}")
-        
+
+        # --- Metadata (types, methods) ---
+        meta = await _run_cli(["--binary", str(self.binary_path), "--list-types"])
+        result["types"] = meta if isinstance(meta, list) else meta.get("error", meta)
+
+        # --- PE info ---
+        pe_info = await _run_cli(["--binary", str(self.binary_path), "--pe-info"])
+        result["pe_info"] = pe_info
+
+        # --- Extract specific classes ---
         if extract_classes:
-            result["extracted_classes"] = extract_classes
-        
-        if output_format == "vscode":
-            result["vscode_structure"] = await self._generate_vscode_structure(
-                output_dir,
-                extract_classes
-            )
-        elif output_format == "json":
-            result["data"] = metadata
-        elif output_format == "markdown":
-            result["markdown_path"] = await self._generate_markdown(output_dir)
-        
+            extracted = {}
+            for cls in extract_classes:
+                cls_src = await _run_cli([
+                    "--binary", str(self.binary_path),
+                    "--decompile-type", "--type", cls,
+                ])
+                extracted[cls] = cls_src.get("content", cls_src.get("error", ""))
+            result["extracted_classes"] = extracted
+
+        # --- Obfuscation analysis ---
+        if analyze_obfuscation:
+            result["obfuscation_analysis"] = await self.analyze_obfuscation()
+
+        # --- Output format ---
+        if output_format == "markdown":
+            md_path = await self._generate_markdown(result)
+            result["markdown_path"] = md_path
+        elif output_format == "vscode":
+            result["vscode_structure"] = await self._generate_vscode_structure()
+
         return result
-    
-    async def _extract_metadata(self) -> Dict[str, Any]:
-        return {
-            "types": [],
-            "methods": [],
-            "fields": [],
-            "namespaces": []
-        }
-    
-    async def _generate_vscode_structure(
+
+    async def decompile_type(self, type_name: str) -> Dict[str, Any]:
+        logger.info(f"Worker {self.worker_id}: decompile-type {type_name}")
+        return await _run_cli([
+            "--binary", str(self.binary_path),
+            "--decompile-type", "--type", type_name,
+        ])
+
+    async def decompile_method(self, type_name: str, method_name: str) -> Dict[str, Any]:
+        logger.info(f"Worker {self.worker_id}: decompile-method {type_name}.{method_name}")
+        return await _run_cli([
+            "--binary", str(self.binary_path),
+            "--decompile-method", "--type", type_name, "--method", method_name,
+        ])
+
+    # ─── IL dump ──────────────────────────────────────────────────────────────
+
+    async def dump_il(
         self,
-        output_dir: Path,
-        classes: Optional[List[str]] = None
+        type_name: Optional[str] = None,
+        method_name: Optional[str] = None,
     ) -> Dict[str, Any]:
-        structure = {
-            "root": str(output_dir),
-            "files": [],
-            "directories": [
-                "src",
-                "src/Core",
-                "src/UI",
-                "src/Utilities",
-                ".vscode"
-            ]
-        }
-        
-        for d in structure["directories"]:
-            (output_dir / d).mkdir(parents=True, exist_ok=True)
-        
-        vscode_dir = output_dir / ".vscode"
-        settings = {
-            "omnisharp.enableEditorConfigSupport": True,
-            "omnisharp.enableRoslynAnalyzers": True,
-            "files.exclude": {
-                "**/.git": True,
-                "**/bin": True,
-                "**/obj": True
-            }
-        }
-        
-        (vscode_dir / "settings.json").write_text(
-            json.dumps(settings, indent=2)
-        )
-        
-        launch = {
-            "version": "0.2.0",
-            "configurations": [
-                {
-                    "name": ".NET Core Launch",
-                    "type": "coreclr",
-                    "request": "launch",
-                    "preLaunchTask": "build",
-                    "program": "${workspaceFolder}/bin/Debug/app",
-                    "args": [],
-                    "stopAtEntry": False
-                }
-            ]
-        }
-        
-        (vscode_dir / "launch.json").write_text(
-            json.dumps(launch, indent=2)
-        )
-        
-        structure["vscode_config"] = {
-            "settings": str(vscode_dir / "settings.json"),
-            "launch": str(vscode_dir / "launch.json")
-        }
-        
-        return structure
-    
-    async def _generate_markdown(self, output_dir: Path) -> str:
-        md_path = output_dir / "DECOMPILATION.md"
-        
-        content = f"""# Decompilation Report
+        args = ["--binary", str(self.binary_path), "--dump-il"]
+        if type_name:
+            args += ["--type", type_name]
+        if method_name:
+            args += ["--method", method_name]
+        return await _run_cli(args)
 
-**Binary:** {self.binary_path.name}
-**Worker ID:** {self.worker_id}
+    # ─── Search ───────────────────────────────────────────────────────────────
 
-## Summary
+    async def search_strings(self, pattern: str, use_regex: bool = False) -> Dict[str, Any]:
+        args = ["--binary", str(self.binary_path), "--search-string", pattern]
+        if use_regex:
+            args.append("--regex")
+        return await _run_cli(args)
 
-Decompiled source code for the provided .NET binary.
+    async def search_members(self, pattern: str) -> Dict[str, Any]:
+        return await _run_cli([
+            "--binary", str(self.binary_path), "--search-member", pattern,
+        ])
 
-## Namespaces
+    # ─── Type / method inspection ─────────────────────────────────────────────
 
-(Extracted from metadata)
+    async def list_types(self) -> Dict[str, Any]:
+        return await _run_cli(["--binary", str(self.binary_path), "--list-types"])
 
-## Key Types
+    async def list_methods(self, type_name: Optional[str] = None) -> Dict[str, Any]:
+        args = ["--binary", str(self.binary_path), "--list-methods"]
+        if type_name:
+            args += ["--type", type_name]
+        return await _run_cli(args)
 
-(Primary types listed)
-
-## Source Code
-
-(Full decompiled source follows)
-"""
-        
-        md_path.write_text(content)
-        return str(md_path)
-    
-    async def analyze_obfuscation(self) -> Dict[str, Any]:
-        logger.info(f"Analyzing obfuscation: {self.binary_path}")
-        
-        analysis = {
-            "obfuscated": False,
-            "techniques": [],
-            "confidence": 0.0,
-            "details": {}
-        }
-        
-        try:
-            binary_data = self.binary_path.read_bytes()
-            
-            if b"ConfuserEx" in binary_data or b"Confuser" in binary_data:
-                analysis["obfuscated"] = True
-                analysis["techniques"].append("ConfuserEx")
-                analysis["confidence"] += 0.9
-                analysis["details"]["confuser"] = "ConfuserEx v1.0+"
-            
-            if b".xdata" in binary_data and b".pdata" in binary_data:
-                analysis["techniques"].append("Native Compilation")
-                analysis["confidence"] += 0.7
-            
-            if len(binary_data) > 1000000:
-                analysis["techniques"].append("Resource Embedding")
-                analysis["confidence"] += 0.3
-            
-            entropy_score = self._calculate_entropy(binary_data[:10000])
-            if entropy_score > 6.5:
-                analysis["techniques"].append("String Encryption")
-                analysis["confidence"] += 0.6
-                analysis["details"]["entropy"] = entropy_score
-            
-            analysis["confidence"] = min(analysis["confidence"], 1.0)
-            
-        except Exception as e:
-            logger.error(f"Obfuscation analysis error: {e}")
-            analysis["error"] = str(e)
-        
-        return analysis
-    
-    def _calculate_entropy(self, data: bytes) -> float:
-        if not data:
-            return 0.0
-        
-        freq = Counter(data)
-        entropy = 0.0
-        for count in freq.values():
-            p = count / len(data)
-            entropy -= p * math.log2(p)
-        
-        return entropy
-    
     async def extract_class(self, class_name: str) -> str:
-        logger.info(f"Extracting class: {class_name}")
-        
-        source = f"""
-// Class: {class_name}
-// From: {self.binary_path.name}
+        """Extract and decompile a class to C# source."""
+        result = await _run_cli([
+            "--binary", str(self.binary_path),
+            "--decompile-type", "--type", class_name,
+        ])
+        return result.get("content", result.get("error", f"// Could not decompile {class_name}"))
 
-namespace Extracted {{
-    public class {class_name} {{
-        // Properties
-        
-        // Methods
-        
-        // Fields
-    }}
-}}
-"""
-        
-        class_file = self.work_dir / f"{class_name}.cs"
-        class_file.write_text(source)
-        
-        return source
-    
+    async def inspect_type(self, type_name: str, include_source: bool = False) -> Dict[str, Any]:
+        args = ["--binary", str(self.binary_path), "--inspect", type_name]
+        if include_source:
+            args.append("--include-source")
+        return await _run_cli(args)
+
+    async def inspect_method(
+        self,
+        type_name: str,
+        method_name: str,
+        include_il: bool = False,
+    ) -> Dict[str, Any]:
+        args = [
+            "--binary", str(self.binary_path),
+            "--inspect-method",
+            "--type", type_name,
+            "--method", method_name,
+            "--include-source",
+        ]
+        if include_il:
+            args.append("--include-il")
+        return await _run_cli(args)
+
+    # ─── PE info & resources ──────────────────────────────────────────────────
+
+    async def get_pe_info(self) -> Dict[str, Any]:
+        return await _run_cli(["--binary", str(self.binary_path), "--pe-info"])
+
+    async def get_resources(self) -> Dict[str, Any]:
+        return await _run_cli(["--binary", str(self.binary_path), "--get-resources"])
+
+    # ─── P/Invoke & attributes ────────────────────────────────────────────────
+
+    async def list_pinvokes(self) -> Dict[str, Any]:
+        return await _run_cli(["--binary", str(self.binary_path), "--list-pinvokes"])
+
+    async def find_attributes(self, attribute_name: str) -> Dict[str, Any]:
+        return await _run_cli([
+            "--binary", str(self.binary_path),
+            "--find-attributes", attribute_name,
+        ])
+
+    async def resolve_token(self, token_hex: str) -> Dict[str, Any]:
+        return await _run_cli([
+            "--binary", str(self.binary_path), "--token", token_hex,
+        ])
+
+    # ─── Breakpoint (stub — requires live debugger) ───────────────────────────
+
     async def set_breakpoint(
         self,
         type_name: str,
         method_name: str,
-        il_offset: Optional[int] = None
+        il_offset: Optional[int] = None,
     ) -> Dict[str, Any]:
-        logger.info(f"Breakpoint: {type_name}.{method_name}")
-        
-        breakpoint = {
+        """
+        Register a breakpoint definition. Actual breakpoint attachment requires
+        a live debug session (see AutomatedDebugger — WIP for headless ptrace/CLR).
+        For now this records the breakpoint so it can be applied when a session starts.
+        """
+        import json as _json
+        bp = {
             "type": type_name,
             "method": method_name,
             "il_offset": il_offset or 0,
             "enabled": True,
             "worker_id": self.worker_id,
-            "binary": str(self.binary_path)
+            "binary": str(self.binary_path),
+            "note": "Breakpoint registered. Attach a debug session to activate.",
         }
-        
         bp_file = self.work_dir / "breakpoints.json"
         existing = []
-        
         if bp_file.exists():
-            existing = json.loads(bp_file.read_text())
-        
-        existing.append(breakpoint)
-        bp_file.write_text(json.dumps(existing, indent=2))
-        
-        return breakpoint
+            try:
+                existing = _json.loads(bp_file.read_text())
+            except Exception:
+                pass
+        existing.append(bp)
+        bp_file.write_text(_json.dumps(existing, indent=2))
+        return bp
+
+    # ─── Obfuscation analysis ─────────────────────────────────────────────────
+
+    async def analyze_obfuscation(self) -> Dict[str, Any]:
+        """
+        Heuristic obfuscation detection via static binary inspection.
+        Uses byte-pattern matching + entropy analysis. No execution.
+        """
+        logger.info(f"Worker {self.worker_id}: analyze-obfuscation {self.binary_path.name}")
+
+        analysis: Dict[str, Any] = {
+            "obfuscated": False,
+            "techniques": [],
+            "confidence": 0.0,
+            "details": {},
+        }
+
+        try:
+            data = self.binary_path.read_bytes()
+
+            # Known obfuscator signatures
+            sigs = {
+                b"ConfuserEx": ("ConfuserEx", 0.90),
+                b"Confuser v": ("Confuser Classic", 0.85),
+                b"dotfuscator": ("Dotfuscator", 0.85),
+                b"SmartAssembly": ("SmartAssembly", 0.85),
+                b"Obfuscar": ("Obfuscar", 0.80),
+                b"Eazfuscator": ("Eazfuscator", 0.80),
+                b"Babel.": ("Babel Obfuscator", 0.80),
+                b"NetReactor": (".NET Reactor", 0.80),
+                b"DeepSea": ("DeepSea Obfuscator", 0.75),
+            }
+
+            conf = 0.0
+            for sig, (name, weight) in sigs.items():
+                if sig.lower() in data.lower():
+                    analysis["obfuscated"] = True
+                    analysis["techniques"].append(name)
+                    conf = max(conf, weight)
+                    analysis["details"][name] = "Signature detected"
+
+            # Native compilation indicators
+            if b".xdata" in data and b".pdata" in data:
+                analysis["techniques"].append("NativeAOT/ReadyToRun")
+                analysis["details"]["native"] = "PE sections .xdata/.pdata suggest native compilation"
+                conf = max(conf, 0.60)
+
+            # High entropy = encrypted/packed sections
+            entropy = _calculate_entropy(data[:16384])
+            analysis["details"]["header_entropy"] = round(entropy, 4)
+            if entropy > 7.0:
+                analysis["techniques"].append("High entropy (packed/encrypted)")
+                analysis["obfuscated"] = True
+                conf = max(conf, 0.70)
+            elif entropy > 6.5:
+                analysis["techniques"].append("Elevated entropy (possible encryption)")
+                conf = max(conf, 0.40)
+
+            # Embedded DLL (large resource blob)
+            if len(data) > 2_000_000:
+                analysis["details"]["size_mb"] = round(len(data) / 1_048_576, 2)
+                analysis["techniques"].append("Large binary (possible embedded resources)")
+
+            analysis["confidence"] = min(round(conf, 2), 1.0)
+            if analysis["confidence"] > 0.5:
+                analysis["obfuscated"] = True
+
+        except Exception as e:
+            logger.error(f"Obfuscation analysis error: {e}")
+            analysis["error"] = str(e)
+
+        return analysis
+
+    # ─── Output helpers ───────────────────────────────────────────────────────
+
+    async def _generate_markdown(self, result: Dict[str, Any]) -> str:
+        md_path = self.work_dir / "DECOMPILATION.md"
+        pe = result.get("pe_info", {})
+        types = result.get("types", [])
+        type_count = len(types) if isinstance(types, list) else "?"
+
+        content = f"""# Decompilation Report
+
+**Binary:** {self.binary_path.name}
+**Worker ID:** {self.worker_id}
+
+## PE Info
+- Architecture: {pe.get('architecture', '?')}
+- Framework: {pe.get('targetFramework', '?')}
+- Version: {pe.get('assemblyVersion', '?')}
+- Signed: {pe.get('isSigned', '?')}
+- Managed: {pe.get('isManaged', '?')}
+
+## Types ({type_count} total)
+
+{chr(10).join(f'- `{t["fullName"]}`' for t in types[:50] if isinstance(t, dict)) if isinstance(types, list) else str(types)}
+
+{f"... and {len(types) - 50} more." if isinstance(types, list) and len(types) > 50 else ""}
+
+## Obfuscation Analysis
+
+{result.get('obfuscation_analysis', {}).get('techniques', 'Not analyzed')}
+"""
+        md_path.write_text(content)
+        return str(md_path)
+
+    async def _generate_vscode_structure(self) -> Dict[str, Any]:
+        import json as _json
+        output_dir = self.work_dir / "output"
+        for sub in ["src", ".vscode"]:
+            (output_dir / sub).mkdir(parents=True, exist_ok=True)
+
+        (output_dir / ".vscode" / "settings.json").write_text(_json.dumps({
+            "omnisharp.enableEditorConfigSupport": True,
+            "omnisharp.enableRoslynAnalyzers": True,
+        }, indent=2))
+
+        return {
+            "root": str(output_dir),
+            "vscode_config": str(output_dir / ".vscode" / "settings.json"),
+        }
+
+
+def _calculate_entropy(data: bytes) -> float:
+    if not data:
+        return 0.0
+    freq = Counter(data)
+    entropy = 0.0
+    n = len(data)
+    for count in freq.values():
+        p = count / n
+        entropy -= p * math.log2(p)
+    return entropy

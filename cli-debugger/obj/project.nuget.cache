@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "dgSpecHash": "68eoADCQfq6zMovfkpNEDlZD4fjTkUgoxjf22BFoVb+HrqY4TpxZ3h8kCRPkzTlle66itna2LXmOvBRbqNYzMg==",
+  "success": true,
+  "projectFilePath": "/root/.openclaw/workspace/dnspy-mcp/cli-debugger/dnspy-mcp.csproj",
+  "expectedPackageFiles": [
+    "/root/.nuget/packages/system.text.json/8.0.5/system.text.json.8.0.5.nupkg.sha512"
+  ],
+  "logs": []
+}
